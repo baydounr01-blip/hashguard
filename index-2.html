@@ -1,0 +1,1701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QTMP Miner — Open mining-farm intelligence. Pay only when you save.</title>
+<meta name="description" content="Mine only during profitable hours and catch hardware failures weeks early. Free download, no membership — we charge 25% of verified net savings.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F4F6F8; --card:#FFFFFF; --ink:#14212B; --muted:#5B6E7C;
+  --line:#DDE4E9; --amber:#E8951F; --amber2:#F2A33C; --cyan:#1F8E9C;
+  --green:#3E9E6F; --red:#D8543C; --dark:#0B1620; --panel:#122230;
+  --panel2:#16293A; --darkline:#1E3648; --dtext:#DCE7EE; --dmuted:#7C919F;
+  --disp:'Chakra Petch',sans-serif; --sans:'IBM Plex Sans',sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.6}
+h1,h2,h3{font-family:var(--disp);letter-spacing:.01em;line-height:1.2}
+a{color:var(--cyan)}
+button{font-family:var(--sans);cursor:pointer;border:none;border-radius:6px}
+.hidden{display:none!important}
+.mono{font-family:var(--mono)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+section{padding:72px 0}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--amber);margin-bottom:12px}
+.btn{display:inline-block;font-weight:600;font-size:15px;padding:13px 26px;
+  border-radius:6px;text-decoration:none;cursor:pointer;border:none}
+.btn-amber{background:var(--amber);color:#fff}
+.btn-ghost{background:transparent;color:var(--ink);border:1.5px solid var(--ink)}
+.btn:focus-visible,button:focus-visible,input:focus{outline:3px solid var(--cyan);outline-offset:2px}
+h2{font-size:clamp(24px,3.2vw,32px);margin-bottom:12px}
+.lead{color:var(--muted);max-width:62ch}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ═══ NAV ═══ */
+nav{display:flex;align-items:center;gap:26px;padding:18px 0;
+  border-bottom:1px solid var(--line);flex-wrap:wrap}
+nav .logo{font-family:var(--disp);font-weight:700;font-size:18px;
+  color:var(--ink);text-decoration:none;cursor:pointer}
+nav .logo span{color:var(--amber)}
+nav a:not(.logo){color:var(--muted);text-decoration:none;font-size:14px;cursor:pointer}
+nav a:not(.logo):hover{color:var(--ink)}
+nav .spacer{flex:1}
+.nav-console{background:transparent;color:var(--ink);border:1.5px solid var(--ink);
+  padding:8px 18px;font-size:13px;font-weight:600;border-radius:6px}
+
+/* ═══ HERO + SIM ═══ */
+#hero{padding:64px 0 72px}
+#hero .grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+@media(max-width:880px){#hero .grid{grid-template-columns:1fr}}
+#hero h1{font-size:clamp(30px,4.5vw,44px);margin-bottom:18px}
+#hero h1 em{font-style:normal;color:var(--amber)}
+#hero p{color:var(--muted);font-size:17px;margin-bottom:28px;max-width:46ch}
+#hero .btns{display:flex;gap:14px;flex-wrap:wrap}
+#hero .free{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:16px}
+#sim{background:var(--dark);border-radius:10px;padding:22px;color:var(--dtext);
+  border:1px solid var(--darkline);box-shadow:0 20px 50px rgba(11,22,32,.18)}
+#sim .simhead{display:flex;justify-content:space-between;align-items:center;
+  font-family:var(--mono);font-size:11px;color:var(--dmuted);margin-bottom:14px}
+#simBadge{font-family:var(--disp);font-weight:700;font-size:13px;
+  padding:3px 12px;border-radius:4px}
+#simBadge.mine{background:rgba(76,183,130,.18);color:#4CB782}
+#simBadge.pause{background:rgba(228,87,61,.18);color:#E4573D}
+#simRack{display:flex;gap:9px;align-items:flex-end;margin-bottom:16px}
+.sm{display:flex;flex-direction:column-reverse;gap:3px}
+.sb{width:34px;height:20px;border-radius:2px;transition:background .8s,opacity .5s}
+#simPrices{display:flex;align-items:flex-end;gap:2px;height:64px;position:relative}
+.sp{flex:1;border-radius:1px 1px 0 0}
+.sp.cheap{background:#4CB782}.sp.exp{background:#E4573D}
+.sp.now{outline:2px solid #F2A33C;outline-offset:1px}
+#simBe{position:absolute;left:0;right:0;border-top:1px dashed #F2A33C}
+#simFoot{display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:11px;color:var(--dmuted);margin-top:14px;flex-wrap:wrap;gap:8px}
+#simSave{color:#4CB782;font-size:13px}
+#simAlert{font-size:11px;color:#F2A33C;min-height:16px;margin-top:8px;
+  font-family:var(--mono)}
+
+/* ═══ STEPS / PRICING / DOWNLOAD / FAQ ═══ */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:36px}
+@media(max-width:760px){.steps{grid-template-columns:1fr}}
+.step{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:26px}
+.step .n{font-family:var(--mono);color:var(--amber);font-size:13px;margin-bottom:10px}
+.step h3{font-size:17px;margin-bottom:10px}
+.step p{color:var(--muted);font-size:14px}
+#pricing{background:var(--dark);color:var(--dtext)}
+#pricing .eyebrow{color:var(--amber2)}
+#pricing h2{color:#fff}
+#pricing p{color:#9FB2BF}
+.formula{background:var(--panel);border:1px solid var(--darkline);border-radius:8px;
+  padding:22px 26px;font-family:var(--mono);font-size:14px;line-height:2;
+  margin:28px 0;overflow-x:auto}
+.formula b{color:var(--amber2)}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:760px){.split{grid-template-columns:1fr}}
+.pcard{background:var(--panel);border:1px solid var(--darkline);border-radius:8px;padding:24px}
+.pcard h3{font-size:15px;color:#fff;margin-bottom:12px}
+.pcard ul{list-style:none}
+.pcard li{font-size:14px;color:#9FB2BF;padding:5px 0 5px 22px;position:relative}
+.pcard li::before{content:"—";position:absolute;left:0;color:var(--amber2)}
+.pcard .big{font-family:var(--disp);font-size:34px;color:var(--amber2);margin:6px 0 2px}
+.pcard .sub{font-size:12px;color:var(--dmuted)}
+.dl{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:32px}
+@media(max-width:760px){.dl{grid-template-columns:1fr}}
+.dlcard{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:28px}
+.dlcard h3{font-size:17px;margin-bottom:8px}
+.dlcard p{color:var(--muted);font-size:14px;margin-bottom:18px}
+.dlcard code{font-family:var(--mono);font-size:12px;background:var(--paper);
+  border:1px solid var(--line);border-radius:4px;padding:3px 8px;display:inline-block;
+  margin-top:10px}
+details{border-bottom:1px solid var(--line);padding:16px 0}
+summary{font-weight:600;cursor:pointer;font-size:15px}
+details p{color:var(--muted);font-size:14px;margin-top:10px;max-width:70ch}
+footer{border-top:1px solid var(--line);padding:32px 0;color:var(--muted);font-size:13px}
+
+/* ═══ CONSOLE VIEW (dark app) ═══ */
+#consoleView{background:var(--dark);color:var(--dtext);min-height:100vh;font-size:14px}
+#consoleView input,#consoleView select{font-family:var(--mono);background:var(--dark);
+  color:var(--dtext);border:1px solid var(--darkline);border-radius:4px;
+  padding:7px 10px;font-size:13px;width:100%}
+#gate{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.gate-card{background:var(--panel);border:1px solid var(--darkline);border-radius:8px;
+  padding:36px 32px;width:100%;max-width:380px}
+.gate-card h1{font-size:20px;margin-bottom:4px}
+.gate-card h1 span{color:var(--amber2)}
+.gate-card .sub{color:var(--dmuted);font-size:12px;margin-bottom:24px}
+.gate-card label{display:block;font-size:12px;color:var(--dmuted);margin:14px 0 5px}
+.gate-card button{width:100%;margin-top:22px;padding:11px;background:var(--amber2);
+  color:#1a1205;font-weight:600;font-size:14px}
+.gate-note{font-size:11px;color:var(--dmuted);margin-top:16px;line-height:1.6}
+#gateErr{color:#E4573D;font-size:12px;margin-top:10px;min-height:16px}
+.gate-back{background:none;border:none;color:var(--dmuted);font-size:12px;
+  margin-top:14px;text-decoration:underline;cursor:pointer;width:100%}
+#topbar{display:flex;align-items:center;gap:16px;padding:12px 20px;
+  border-bottom:1px solid var(--darkline);flex-wrap:wrap}
+#topbar h1{font-size:16px}
+#topbar h1 span{color:var(--amber2)}
+#farmName{color:var(--dmuted);font-size:13px}
+#connDot{width:8px;height:8px;border-radius:50%;background:#E4573D;display:inline-block}
+#connDot.ok{background:#4CB782}
+.icon-btn{background:var(--panel2);color:var(--dtext);padding:7px 14px;font-size:12px;
+  border:1px solid var(--darkline);border-radius:4px}
+#curtailBanner{padding:14px 20px;font-family:var(--mono);font-size:13px;
+  display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--darkline)}
+#curtailBanner .badge{font-family:var(--disp);font-weight:700;font-size:15px;
+  padding:4px 14px;border-radius:4px}
+#curtailBanner.mine .badge{background:rgba(76,183,130,.15);color:#4CB782}
+#curtailBanner.pause .badge{background:rgba(228,87,61,.15);color:#E4573D}
+#consoleView main{display:grid;grid-template-columns:1fr 360px;gap:16px;
+  padding:16px 20px;max-width:1400px;margin:0 auto}
+@media(max-width:960px){#consoleView main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--darkline);border-radius:8px;padding:18px}
+.panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--dmuted);margin-bottom:14px}
+#rack{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;min-height:150px}
+.miner{display:flex;flex-direction:column-reverse;gap:4px;align-items:center}
+.miner .mname{font-family:var(--mono);font-size:10px;color:var(--dmuted);margin-top:6px}
+.board{width:56px;height:34px;border-radius:3px;display:flex;align-items:center;
+  justify-content:center;font-family:var(--mono);font-size:10px;color:#0b1620;
+  font-weight:500;transition:background .6s}
+.rack-legend{display:flex;gap:14px;margin-top:16px;font-size:11px;color:var(--dmuted);
+  align-items:center;flex-wrap:wrap}
+.lg{width:12px;height:12px;border-radius:2px;display:inline-block;
+  vertical-align:-2px;margin-right:4px}
+#priceChart{display:flex;align-items:flex-end;gap:3px;height:120px;margin-top:6px;
+  position:relative}
+.pbar{flex:1;min-width:6px;border-radius:2px 2px 0 0;position:relative}
+.pbar.cheap{background:#4CB782}
+.pbar.expensive{background:#E4573D}
+.pbar.now{outline:2px solid #F2A33C}
+#beLine{position:absolute;left:0;right:0;border-top:1px dashed #F2A33C;pointer-events:none}
+#beLine span{position:absolute;right:0;top:-16px;font-family:var(--mono);
+  font-size:10px;color:#F2A33C}
+.price-meta{font-family:var(--mono);font-size:11px;color:var(--dmuted);margin-top:10px}
+#alerts,#savings{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto}
+.alert{border:1px solid var(--darkline);border-left:3px solid #F2A33C;
+  border-radius:4px;padding:10px 12px;background:var(--panel2)}
+.alert.CRITICAL{border-left-color:#E4573D}
+.alert .ahead{display:flex;justify-content:space-between;font-family:var(--mono);
+  font-size:11px;color:var(--dmuted);margin-bottom:4px}
+.alert .amsg{font-size:13px}
+.alert .abtns{display:flex;gap:8px;margin-top:8px}
+.alert .abtns button{font-size:11px;padding:4px 10px;border-radius:4px}
+.btn-real{background:rgba(228,87,61,.15);color:#E4573D}
+.btn-false{background:rgba(87,199,212,.12);color:#57C7D4}
+.alert.closed{opacity:.45}
+.empty{color:var(--dmuted);font-size:13px;padding:8px 0}
+.cal-row{display:grid;grid-template-columns:1fr 90px;gap:10px;align-items:center;
+  margin-bottom:12px}
+.cal-row label{font-size:12px;color:var(--dmuted)}
+.cal-row .val{font-family:var(--mono);font-size:12px;text-align:right;color:#F2A33C}
+.cal-row input[type=range]{width:100%;accent-color:#F2A33C;padding:0;border:none}
+.cal-section{border-top:1px solid var(--darkline);margin-top:16px;padding-top:14px}
+.cal-section h3{font-size:12px;color:var(--dtext);margin-bottom:10px;
+  text-transform:uppercase;letter-spacing:.06em}
+.save-btn{width:100%;margin-top:14px;padding:10px;background:var(--amber2);
+  color:#1a1205;font-weight:600;border-radius:4px}
+#saveMsg{font-size:12px;margin-top:8px;min-height:16px;font-family:var(--mono)}
+#settings{position:fixed;inset:0;background:rgba(5,10,15,.8);display:flex;
+  align-items:center;justify-content:center;padding:20px;z-index:10}
+.set-card{background:var(--panel);border:1px solid var(--darkline);border-radius:8px;
+  padding:28px;width:100%;max-width:440px}
+.set-card h2{font-size:15px;margin-bottom:16px}
+.set-card label{display:block;font-size:12px;color:var(--dmuted);margin:12px 0 5px}
+.set-card .note{font-size:11px;color:var(--dmuted);margin-top:14px;line-height:1.6}
+.set-card .row{display:flex;gap:10px;margin-top:18px}
+.set-card .row button{flex:1;padding:10px;border-radius:4px}
+.primary{background:var(--amber2);color:#1a1205;font-weight:600}
+.ghost{background:var(--panel2);color:var(--dtext);border:1px solid var(--darkline)}
+</style>
+</head>
+<body>
+
+<!-- ════════════════ LANDING VIEW ════════════════ -->
+<div id="landingView">
+<div class="wrap">
+<nav>
+  <a class="logo" onclick="showLanding()">QTMP <span>MINER</span></a>
+  <div class="spacer"></div>
+  <a href="#how">How it works</a>
+  <a href="#pricing">Pricing</a>
+  <a href="#download">Download</a>
+  <a href="#faq">FAQ</a>
+  <button class="nav-console" onclick="showConsole()">Client console</button>
+</nav>
+</div>
+
+<section id="hero">
+<div class="wrap grid">
+  <div>
+    <div class="eyebrow">Free software · The Bitcoin Core model</div>
+    <h1>Your farm mines only when the hour is <em>profitable</em></h1>
+    <p>QTMP Miner decides every hour whether to mine or pause based on real
+    electricity prices against your break-even, and watches every hashboard
+    to warn you about failures weeks before they happen. No membership,
+    no fee — we only get paid when you save.</p>
+    <div class="btns">
+      <button class="btn btn-amber" onclick="downloadAgent()">Download free</button>
+      <a class="btn btn-ghost" href="#sim-anchor">Watch the live demo ↓</a>
+    </div>
+    <div class="free">v1.0 · Python · runs on your own network · you hold the keys</div>
+  </div>
+  <div id="sim-anchor">
+    <div id="sim" aria-label="Live simulated farm">
+      <div class="simhead">
+        <span>SIMULATED FARM · 5 machines · <span id="simClock">00:00</span></span>
+        <span id="simBadge" class="mine">MINING</span>
+      </div>
+      <div id="simRack"></div>
+      <div id="simPrices"></div>
+      <div id="simFoot">
+        <span>hourly price vs <span style="color:#F2A33C">break-even</span></span>
+        <span id="simSave">net savings: €0.00</span>
+      </div>
+      <div id="simAlert"></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<section id="how">
+<div class="wrap">
+  <div class="eyebrow">How it works</div>
+  <h2>Three pieces, none outside your control</h2>
+  <p class="lead">The architecture is Bitcoin Core's: the software runs on your
+  machine, inside your network. Nothing from your farm leaves to third-party
+  servers.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="n">01 · AGENT</div>
+      <h3>Install the agent at your farm</h3>
+      <p>A single Python file on any Raspberry Pi or PC on the local network.
+      It reads your Antminers/Whatsminers through their standard API
+      (port 4028), computes your break-even against hourly electricity
+      prices, and decides: mine or pause. If the agent dies, your machines
+      keep running on their own.</p>
+    </div>
+    <div class="step">
+      <div class="n">02 · QTMP ENGINE</div>
+      <h3>Every board is compared to its siblings</h3>
+      <p>Robust statistics across hashboards of the same rack: the board
+      drifting away from its siblings betrays the failure long before any
+      temperature alarm. A fan forcing higher RPM, hardware errors trending
+      up, hashrate slowly sagging — weeks of lead time to act.</p>
+    </div>
+    <div class="step">
+      <div class="n">03 · CONSOLE</div>
+      <h3>Calibrate everything yourself</h3>
+      <p>Thresholds, break-even, electricity tariff, alert sensitivity: every
+      farm is different and every parameter is yours. Mark each alert as
+      real or false and the system recalibrates its own thresholds from
+      your feedback.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<section id="pricing">
+<div class="wrap">
+  <div class="eyebrow">Pricing</div>
+  <h2>Free if you don't save. 25% if you do.</h2>
+  <p class="lead">No membership, no license fee. Billing is computed on
+  <b style="color:#F2A33C">verifiable net savings</b> — and the formula is in
+  plain sight, in the code and in your console:</p>
+  <div class="formula">
+    net_savings = electricity_avoided − mining_revenue_lost<br>
+    electricity_avoided = kWh_paused × price_per_kWh of that hour<br>
+    <b>monthly fee = 25% × executed net savings of the month</b><br>
+    <span style="color:#7C919F">— only pauses that were actually executed
+    count; advisory mode bills nothing —</span>
+  </div>
+  <div class="split">
+    <div class="pcard">
+      <h3>You keep</h3>
+      <div class="big">75%</div>
+      <div class="sub">of every euro saved</div>
+      <ul style="margin-top:14px">
+        <li>Full software, no crippled features</li>
+        <li>Your data never leaves your network</li>
+        <li>Auditable savings ledger, month by month, in your console</li>
+        <li>A month with no savings is a month with no bill</li>
+      </ul>
+    </div>
+    <div class="pcard">
+      <h3>We charge</h3>
+      <div class="big">25%</div>
+      <div class="sub">of executed net savings</div>
+      <ul style="margin-top:14px">
+        <li>The fee is declared in the license and visible in your console</li>
+        <li>The monthly statement shows the full breakdown</li>
+        <li>Nothing is charged silently: if you can't see it, it doesn't exist</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</section>
+
+<section id="download">
+<div class="wrap">
+  <div class="eyebrow">Download</div>
+  <h2>Like Bitcoin Core: download, verify, run</h2>
+  <div class="dl">
+    <div class="dlcard">
+      <h3>Farm agent</h3>
+      <p>The full engine. Runs inside your network, next to your machines.
+      Includes a demo mode with a simulated farm so you can try it with no
+      hardware at all. The source is embedded in this very page — the
+      button below builds the file in your browser.</p>
+      <button class="btn btn-amber" onclick="downloadAgent()">qtmp_miner_agent.py</button>
+      <br><code>pip install requests numpy</code>
+      <br><code>python3 qtmp_miner_agent.py --demo</code>
+    </div>
+    <div class="dlcard">
+      <h3>Client console</h3>
+      <p>The control panel: live rack, price curve, alerts, calibration and
+      your savings ledger. It connects to your agent using your token —
+      without it, it sees nothing.</p>
+      <button class="btn btn-ghost" onclick="showConsole()">Open the console</button>
+    </div>
+  </div>
+</div>
+</section>
+
+<section id="faq">
+<div class="wrap">
+  <div class="eyebrow">Honest questions</div>
+  <h2>FAQ</h2>
+  <details open>
+    <summary>How do I know the savings measurement is fair?</summary>
+    <p>The savings ledger lives on your own machine (savings.json), the
+    formula is public, and net savings subtract the mining revenue you lose
+    while paused — not just the electricity you avoid. Only pauses that
+    were actually executed generate billing; advisory mode, where the
+    software only recommends, bills nothing.</p>
+  </details>
+  <details>
+    <summary>Can the software touch my funds or my pool?</summary>
+    <p>No. The agent reads statistics from your machines and, only if you
+    enable it, pauses/resumes them via smart plug or firmware. It never
+    knows your pool or wallet credentials, and there is no hidden automatic
+    charge: the statement is a document you review and pay.</p>
+  </details>
+  <details>
+    <summary>What happens if the agent fails?</summary>
+    <p>Nothing. The design is fail-safe: with no price data, the default
+    decision is to mine; if the agent dies, your machines keep running on
+    their firmware; if the console can't connect, the agent keeps deciding
+    on its own. A failure in any piece degrades the service, never your
+    operation.</p>
+  </details>
+  <details>
+    <summary>Where is the AI?</summary>
+    <p>The current engine is robust statistics calibrated by your feedback —
+    every alert you mark as real or false adjusts the thresholds. Everything
+    is logged, and after months of real data from your farm those logs train
+    the next prediction layer. We don't sell you a neural network without
+    data: we build it from yours.</p>
+  </details>
+  <details>
+    <summary>Is curtailment actually worth it?</summary>
+    <p>It depends on your tariff and hardware: the agent computes your exact
+    break-even (per kWh) from your hashrate, power draw and the day's
+    hashprice. On many tariff profiles only part of the day is profitable
+    to mine — and that gap is exactly where the savings are. If your
+    numbers say mining is unprofitable around the clock, the software will
+    tell you that too.</p>
+  </details>
+</div>
+</section>
+
+<div class="wrap">
+<footer>
+  QTMP Miner · analysis and control software for mining farms · past mining
+  performance does not guarantee future results · the success-fee billing is
+  governed by the license accepted at install time
+</footer>
+</div>
+</div><!-- /landingView -->
+
+<!-- ════════════════ CONSOLE VIEW ════════════════ -->
+<div id="consoleView" class="hidden">
+
+  <div id="gate">
+    <div class="gate-card">
+      <h1>QTMP <span>MINER</span></h1>
+      <div class="sub">Farm console · restricted access</div>
+      <label for="pw">Password</label>
+      <input type="password" id="pw" autocomplete="current-password">
+      <button onclick="tryLogin()">Enter</button>
+      <div id="gateErr"></div>
+      <div class="gate-note">
+        This gate controls visual access. The real security is the agent
+        token: without it, this page can neither read nor touch anything
+        on your farm.
+      </div>
+      <button class="gate-back" onclick="showLanding()">← Back to site</button>
+    </div>
+  </div>
+
+  <div id="consoleApp" class="hidden">
+    <div id="topbar">
+      <h1>QTMP <span>MINER</span></h1>
+      <span id="farmName">—</span>
+      <span id="connDot" title="Agent connection status"></span>
+      <span id="lastTs" class="mono" style="font-size:11px;color:var(--dmuted)"></span>
+      <div style="flex:1"></div>
+      <button class="icon-btn" onclick="openSettings()">Connection</button>
+      <button class="icon-btn" onclick="logout()">Sign out</button>
+    </div>
+
+    <div id="curtailBanner" class="mine">
+      <span class="badge" id="curtailAction">—</span>
+      <span id="curtailReason" style="color:var(--dmuted)">Waiting for agent data…</span>
+    </div>
+
+    <main>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="panel">
+          <h2>Rack · per-board z-score (vs. siblings)</h2>
+          <div id="rack"><div class="empty">No data yet.</div></div>
+          <div class="rack-legend">
+            <span><span class="lg" style="background:#4CB782"></span>normal</span>
+            <span><span class="lg" style="background:#F2A33C"></span>z &lt; −alert</span>
+            <span><span class="lg" style="background:#E4573D"></span>z &lt; −critical</span>
+            <span><span class="lg" style="background:#2A3E50"></span>no signal</span>
+            <span class="mono" id="totalTh"></span>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Today's electricity price vs. break-even</h2>
+          <div id="priceChart"><div class="empty">No price curve (fixed source or no data).</div></div>
+          <div class="price-meta" id="priceMeta"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="panel">
+          <h2>Alerts</h2>
+          <div id="alerts"><div class="empty">No alerts. Silence is information too.</div></div>
+        </div>
+        <div class="panel">
+          <h2>Savings &amp; billing</h2>
+          <div id="savings"><div class="empty">No savings data yet.</div></div>
+        </div>
+        <div class="panel">
+          <h2>Calibration</h2>
+          <div id="calBody"></div>
+          <button class="save-btn" onclick="saveConfig()">Save to agent</button>
+          <div id="saveMsg"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="settings" class="hidden">
+    <div class="set-card">
+      <h2>Agent connection</h2>
+      <label for="agentUrl">Agent URL</label>
+      <input id="agentUrl" placeholder="http://100.x.y.z:8787  (Tailscale IP)">
+      <label for="agentTok">Token (X-QTMP-Token)</label>
+      <input id="agentTok" type="password" placeholder="the token the agent printed at startup">
+      <div class="note">
+        The agent runs inside the farm network and is never exposed to the
+        internet. For remote access, install Tailscale on the agent machine
+        and use its Tailscale IP here. The token is stored only in this
+        browser.
+      </div>
+      <div class="row">
+        <button class="ghost" onclick="closeSettings()">Cancel</button>
+        <button class="primary" onclick="saveSettings()">Connect</button>
+      </div>
+    </div>
+  </div>
+</div><!-- /consoleView -->
+
+<script>
+/* ═══════════ VIEW SWITCHING ═══════════ */
+function showLanding(){
+  document.getElementById("consoleView").classList.add("hidden");
+  document.getElementById("landingView").classList.remove("hidden");
+  if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+  window.scrollTo(0,0);
+}
+function showConsole(){
+  document.getElementById("landingView").classList.add("hidden");
+  document.getElementById("consoleView").classList.remove("hidden");
+  if (sessionStorage.getItem("qtmp_gate") === "1") enter();
+  window.scrollTo(0,0);
+}
+
+/* ═══════════ GATE PASSWORD ═══════════
+   SHA-256 hash of the console password. Default: "qtmp2026".
+   To change it: open the browser dev console on this page and run
+     sha256("your-new-password").then(console.log)
+   then paste the result into PASS_HASH before deploying.
+   HONEST NOTE: this lives in a static file and anyone can read the
+   source. It is visual access control, not security. Real security
+   is the agent token. */
+const PASS_HASH = "6b1e1fd0f66e50e29a54cbf68f4b0f19b4a72da72b60ca01d84e93bdd0f1dcd4";
+
+async function sha256(s){
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+async function tryLogin(){
+  const h = await sha256(document.getElementById("pw").value);
+  if (h === PASS_HASH){ sessionStorage.setItem("qtmp_gate","1"); enter(); }
+  else document.getElementById("gateErr").textContent = "Wrong password.";
+}
+document.getElementById("pw").addEventListener("keydown",e=>{
+  if(e.key==="Enter") tryLogin();
+});
+function logout(){
+  sessionStorage.removeItem("qtmp_gate");
+  document.getElementById("consoleApp").classList.add("hidden");
+  document.getElementById("gate").style.display = "flex";
+  if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+}
+
+/* ═══════════ AGENT CONNECTION ═══════════ */
+let AGENT = localStorage.getItem("qtmp_agent_url") || "";
+let TOKEN = localStorage.getItem("qtmp_agent_tok") || "";
+let pollTimer = null, lastStatus = null;
+
+function openSettings(){
+  document.getElementById("agentUrl").value = AGENT;
+  document.getElementById("agentTok").value = TOKEN;
+  document.getElementById("settings").classList.remove("hidden");
+}
+function closeSettings(){ document.getElementById("settings").classList.add("hidden"); }
+function saveSettings(){
+  AGENT = document.getElementById("agentUrl").value.trim().replace(/\/$/,"");
+  TOKEN = document.getElementById("agentTok").value.trim();
+  localStorage.setItem("qtmp_agent_url", AGENT);
+  localStorage.setItem("qtmp_agent_tok", TOKEN);
+  closeSettings(); poll();
+}
+async function api(path, opts={}){
+  const r = await fetch(AGENT+path, {...opts,
+    headers:{"X-QTMP-Token":TOKEN,"Content-Type":"application/json",
+             ...(opts.headers||{})}});
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+
+/* ═══════════ CONSOLE POLLING + RENDER ═══════════ */
+function enter(){
+  document.getElementById("gate").style.display = "none";
+  document.getElementById("consoleApp").classList.remove("hidden");
+  if(!AGENT) openSettings();
+  poll();
+  if(!pollTimer) pollTimer = setInterval(poll, 10000);
+}
+async function poll(){
+  if(!AGENT) return;
+  const dot = document.getElementById("connDot");
+  try{
+    const s = await api("/status");
+    lastStatus = s;
+    dot.classList.add("ok");
+    render(s);
+    renderSavings();
+  }catch(e){
+    dot.classList.remove("ok");
+    document.getElementById("curtailReason").textContent =
+      "No connection to the agent ("+e.message+"). Your miners keep running on their own.";
+  }
+}
+function zColor(z, alert, crit){
+  if (z === null || z === undefined) return "#2A3E50";
+  if (z < -crit)  return "#E4573D";
+  if (z < -alert) return "#F2A33C";
+  return "#4CB782";
+}
+function render(s){
+  document.getElementById("farmName").textContent = s.farm || "—";
+  document.getElementById("lastTs").textContent =
+    s.ts ? new Date(s.ts).toLocaleTimeString() : "";
+
+  const b = document.getElementById("curtailBanner");
+  const act = s.curtailment?.action || "—";
+  b.className = act === "PAUSE" ? "pause" : "mine";
+  document.getElementById("curtailAction").textContent =
+    act === "PAUSE" ? "PAUSED" : "MINING";
+  document.getElementById("curtailReason").textContent = s.curtailment?.reason || "";
+
+  const rack = document.getElementById("rack");
+  rack.innerHTML = "";
+  const q = s.thresholds || {z_alert:2.5, z_critical:4};
+  const names = Object.keys(s.miners||{});
+  if(!names.length){
+    rack.innerHTML = '<div class="empty">The agent sees no miners. Check config.json or start with --demo.</div>';
+  }
+  const all = [];
+  names.forEach(m=> (s.miners[m].boards||[]).forEach(bd=>
+    all.push({m, idx:bd.idx, hr:bd.hashrate_gh})));
+  const hrs = all.map(a=>a.hr).sort((a,b)=>a-b);
+  const med = hrs.length? hrs[Math.floor(hrs.length/2)] : 0;
+  const mad = hrs.length?
+    hrs.map(v=>Math.abs(v-med)).sort((a,b)=>a-b)[Math.floor(hrs.length/2)] : 0;
+  const sigma = 1.4826*mad || 1;
+  let totalTh = 0;
+  names.forEach(m=>{
+    const div = document.createElement("div");
+    div.className = "miner";
+    const label = document.createElement("div");
+    label.className = "mname"; label.textContent = m;
+    (s.miners[m].boards||[]).forEach(bd=>{
+      totalTh += bd.hashrate_gh/1000;
+      const z = (bd.hashrate_gh - med)/sigma;
+      const cell = document.createElement("div");
+      cell.className = "board";
+      cell.style.background = zColor(z, q.z_alert, q.z_critical);
+      cell.textContent = (bd.hashrate_gh/1000).toFixed(0)+"T";
+      cell.title = m+" board "+bd.idx+" · z="+z.toFixed(1)+"σ"
+        + (bd.temp_max? " · "+bd.temp_max.toFixed(0)+"°C":"");
+      div.appendChild(cell);
+    });
+    div.appendChild(label);
+    rack.appendChild(div);
+  });
+  document.getElementById("totalTh").textContent =
+    totalTh ? "Σ "+totalTh.toFixed(0)+" TH/s" : "";
+
+  const pc = document.getElementById("priceChart");
+  const prices = s.prices||{};
+  const hours = Object.keys(prices).map(Number).sort((a,b)=>a-b);
+  if(hours.length > 1){
+    pc.innerHTML = "";
+    const be = s.breakeven || 0;
+    const vals = hours.map(h=>prices[h]);
+    const maxV = Math.max(...vals, be)*1.15;
+    const nowH = new Date().getHours();
+    hours.forEach(h=>{
+      const v = prices[h];
+      const bar = document.createElement("div");
+      bar.className = "pbar "+(v > be ? "expensive":"cheap")+(h===nowH?" now":"");
+      bar.style.height = Math.max(4,(v/maxV)*120)+"px";
+      bar.title = h+":00 · "+v.toFixed(3)+" €/kWh";
+      pc.appendChild(bar);
+    });
+    const line = document.createElement("div");
+    line.id="beLine";
+    line.style.bottom = (be/maxV*120)+"px";
+    line.innerHTML = '<span>break-even '+be.toFixed(3)+'</span>';
+    pc.appendChild(line);
+    const cheap = vals.filter(v=>v<=be).length;
+    document.getElementById("priceMeta").textContent =
+      cheap+" of "+vals.length+" hours profitable today · break-even "+be.toFixed(3)+" €/kWh";
+  } else {
+    document.getElementById("priceMeta").textContent =
+      s.breakeven ? "Break-even: "+s.breakeven.toFixed(3)+" €/kWh (fixed price source)" : "";
+  }
+
+  const al = document.getElementById("alerts");
+  const alerts = (s.alerts||[]).slice().reverse();
+  if(!alerts.length){
+    al.innerHTML = '<div class="empty">No alerts. Silence is information too.</div>';
+  } else {
+    al.innerHTML = "";
+    alerts.forEach(a=>{
+      const d = document.createElement("div");
+      d.className = "alert "+a.severity+(a.open?"":" closed");
+      d.innerHTML =
+        '<div class="ahead"><span>'+a.severity+' · '+a.metric+' · z='+a.z+'σ</span>'+
+        '<span>'+new Date(a.ts).toLocaleTimeString()+'</span></div>'+
+        '<div class="amsg"><b>'+a.target+'</b> — '+a.message+'</div>';
+      if(a.open){
+        const btns = document.createElement("div");
+        btns.className = "abtns";
+        const r = document.createElement("button");
+        r.className="btn-real"; r.textContent="Real failure";
+        r.onclick = ()=>feedback(a.id, true);
+        const f = document.createElement("button");
+        f.className="btn-false"; f.textContent="False alarm";
+        f.onclick = ()=>feedback(a.id, false);
+        btns.append(r,f); d.appendChild(btns);
+      } else {
+        const fb = document.createElement("div");
+        fb.className="ahead"; fb.style.marginTop="6px";
+        fb.textContent = "Marked as "+(a.feedback==="real"?"real":"false")+" — threshold recalibrated";
+        d.appendChild(fb);
+      }
+      al.appendChild(d);
+    });
+  }
+  renderCalibration(s);
+}
+async function feedback(id, real){
+  try{
+    await api("/feedback",{method:"POST",body:JSON.stringify({alert_id:id, real})});
+    poll();
+  }catch(e){ alert("Could not send feedback: "+e.message); }
+}
+
+/* ═══════════ SAVINGS & BILLING ═══════════ */
+async function renderSavings(){
+  const el = document.getElementById("savings");
+  try{
+    const s = await api("/savings");
+    if(!s.statement.length){
+      el.innerHTML = '<div class="empty">No pauses recorded yet.</div>';
+      return;
+    }
+    let html = "";
+    if(s.mode === "advisory"){
+      html += '<div class="empty" style="color:#F2A33C">Advisory mode: savings '+
+        'shown are potential, not billable, until execution is enabled.</div>';
+    }
+    s.statement.slice(-3).reverse().forEach(m=>{
+      const pot = m.advisory.net_saving_eur;
+      html += '<div class="alert" style="border-left-color:#4CB782">'+
+        '<div class="ahead"><span>'+m.month+'</span>'+
+        '<span>fee '+(m.fee_pct*100).toFixed(0)+'%</span></div>'+
+        '<div class="amsg mono" style="font-size:12px;line-height:1.8">'+
+        'Executed net savings: <b>€'+m.executed.net_saving_eur.toFixed(2)+'</b><br>'+
+        (pot>0? 'Potential (advisory): €'+pot.toFixed(2)+'<br>':'')+
+        'kWh avoided: '+m.executed.kwh_avoided.toFixed(1)+
+        ' · machine-hours paused: '+m.executed.paused_hours.toFixed(1)+'<br>'+
+        'Operator fee: <b style="color:#F2A33C">€'+m.fee_eur.toFixed(2)+'</b>'+
+        ' · you keep: <b style="color:#4CB782">€'+m.client_keeps_eur.toFixed(2)+'</b><br>'+
+        '<span style="color:var(--dmuted)">Payment: '+m.payment_address+'</span></div></div>';
+    });
+    el.innerHTML = html;
+  }catch(e){ /* older agent without /savings */ }
+}
+
+/* ═══════════ CALIBRATION PANEL ═══════════ */
+const CAL_FIELDS = [
+  {sec:"QTMP engine", items:[
+    {path:["qtmp","z_alert"],       label:"Alert z (board vs. siblings)", min:1.5,max:6,step:0.1},
+    {path:["qtmp","z_critical"],    label:"Critical z", min:2,max:8,step:0.1},
+    {path:["qtmp","epsilon"],       label:"Epsilon (weak/strong split)", min:0.05,max:0.5,step:0.01},
+    {path:["qtmp","fan_temp_alert"],label:"Fan~temperature z", min:1,max:5,step:0.1},
+  ]},
+  {sec:"Curtailment", items:[
+    {path:["curtailment","hashrate_th"],          label:"Hashrate per machine (TH/s)", min:10,max:300,step:1},
+    {path:["curtailment","power_kw"],             label:"Power per machine (kW)", min:0.5,max:8,step:0.05},
+    {path:["curtailment","hashprice_usd_th_day"], label:"Hashprice ($/TH/day)", min:0.01,max:0.2,step:0.001},
+    {path:["curtailment","fixed_price_eur_kwh"],  label:"Fixed price (€/kWh)", min:0.03,max:0.5,step:0.005},
+    {path:["curtailment","network_cost_eur_kwh"], label:"Grid fees (€/kWh)", min:0,max:0.15,step:0.005},
+    {path:["curtailment","margin"],               label:"Minimum margin over break-even", min:0,max:0.3,step:0.01},
+  ]},
+  {sec:"Adaptive layer", items:[
+    {path:["adaptive","target_precision"], label:"Target alert precision", min:0.3,max:0.95,step:0.05},
+  ]}
+];
+let calState = {};
+function getPath(o,p){ return p.reduce((a,k)=>a?.[k], o); }
+function renderCalibration(s){
+  const body = document.getElementById("calBody");
+  if (body.dataset.built) return;
+  body.dataset.built = "1";
+  body.innerHTML = "";
+  CAL_FIELDS.forEach(sec=>{
+    const wrap = document.createElement("div");
+    wrap.className = "cal-section";
+    wrap.innerHTML = "<h3>"+sec.sec+"</h3>";
+    sec.items.forEach(f=>{
+      const cur = getPath(s.thresholds && f.path[0]==="qtmp"
+                    ? {qtmp:s.thresholds} : defaultsConfig(), f.path) ?? f.min;
+      calState[f.path.join(".")] = cur;
+      const row = document.createElement("div");
+      row.className = "cal-row";
+      const lbl = document.createElement("label");
+      lbl.textContent = f.label;
+      const val = document.createElement("div");
+      val.className="val"; val.textContent = fmt(cur, f.step);
+      const slider = document.createElement("input");
+      slider.type="range"; slider.min=f.min; slider.max=f.max;
+      slider.step=f.step; slider.value=cur;
+      slider.setAttribute("aria-label", f.label);
+      slider.oninput = ()=>{
+        calState[f.path.join(".")] = parseFloat(slider.value);
+        val.textContent = fmt(slider.value, f.step);
+      };
+      const left = document.createElement("div");
+      left.append(lbl, slider);
+      row.append(left, val);
+      wrap.appendChild(row);
+    });
+    body.appendChild(wrap);
+  });
+}
+function defaultsConfig(){
+  return {curtailment:{hashrate_th:100,power_kw:3.05,hashprice_usd_th_day:0.045,
+          fixed_price_eur_kwh:0.12,network_cost_eur_kwh:0.04,margin:0.05},
+          adaptive:{target_precision:0.6}};
+}
+function fmt(v, step){
+  const d = (String(step).split(".")[1]||"").length;
+  return parseFloat(v).toFixed(d);
+}
+async function saveConfig(){
+  const patch = {};
+  Object.entries(calState).forEach(([k,v])=>{
+    const p = k.split(".");
+    patch[p[0]] = patch[p[0]] || {};
+    patch[p[0]][p[1]] = v;
+  });
+  const msg = document.getElementById("saveMsg");
+  try{
+    await api("/config",{method:"POST",body:JSON.stringify(patch)});
+    msg.style.color = "#4CB782";
+    msg.textContent = "Saved to agent ✓";
+    setTimeout(()=>msg.textContent="", 3000);
+    poll();
+  }catch(e){
+    msg.style.color = "#E4573D";
+    msg.textContent = "Save failed: "+e.message;
+  }
+}
+
+/* ═══════════ AGENT DOWNLOAD (Blob — no 404 possible) ═══════════ */
+function downloadAgent(){
+  const src = document.getElementById("agentSource").textContent.replace(/^\n/, "");
+  const blob = new Blob([src], {type: "text/x-python"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "qtmp_miner_agent.py";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ═══════════ HERO SIMULATION ═══════════ */
+const BE = 0.098, N_MINERS = 5, N_BOARDS = 3;
+const KW = 3.05, TH = 100, HP = 0.045, FX = 1.08;
+const simPrices = Array.from({length:24},(_,h)=>
+  +(0.07 + 0.055*Math.sin((h-4)/24*2*Math.PI+1.2)
+        + 0.04*Math.max(0,Math.sin((h-19)/3)) ).toFixed(3));
+let simHour = 0, simTick = 0, simSaved = 0;
+const simHr = Array.from({length:N_MINERS},()=>
+  Array.from({length:N_BOARDS},()=>100+Math.random()*4-2));
+const simRackEl = document.getElementById("simRack");
+const simCells = [];
+for(let m=0;m<N_MINERS;m++){
+  const col = document.createElement("div"); col.className="sm";
+  for(let b=0;b<N_BOARDS;b++){
+    const c = document.createElement("div"); c.className="sb";
+    col.appendChild(c); simCells.push(c);
+  }
+  simRackEl.appendChild(col);
+}
+const simPc = document.getElementById("simPrices");
+const simBars = simPrices.map(p=>{
+  const bar = document.createElement("div");
+  bar.className = "sp "+(p>BE?"exp":"cheap");
+  bar.style.height = Math.max(4, p/Math.max(...simPrices)*64)+"px";
+  simPc.appendChild(bar); return bar;
+});
+const simBeEl = document.createElement("div"); simBeEl.id="simBe";
+simBeEl.style.bottom = (BE/Math.max(...simPrices)*64)+"px"; simPc.appendChild(simBeEl);
+function median(a){const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)];}
+function simStep(){
+  simTick++;
+  if(simTick % 3 === 0) simHour = (simHour+1)%24;
+  const price = simPrices[simHour];
+  const pause = price > BE;
+  const flat = [];
+  simHr.forEach((m,mi)=>m.forEach((v,bi)=>{
+    let x = v + (Math.random()-0.5)*1.6;
+    if(mi===3 && bi===1) x -= 0.05;
+    simHr[mi][bi] = x; flat.push(x);
+  }));
+  const med = median(flat);
+  const mad = median(flat.map(v=>Math.abs(v-med)))*1.4826 || 1;
+  let alerted = false;
+  simCells.forEach((c,i)=>{
+    const z = (flat[i]-med)/mad;
+    c.style.opacity = pause? .35 : 1;
+    c.style.background = z<-4 ? "#E4573D" : z<-2.5 ? "#F2A33C" : "#4CB782";
+    if(z<-2.5) alerted = true;
+  });
+  document.getElementById("simAlert").textContent = alerted
+    ? "⚠ ALERT: machine 04 board 2 drifting below its siblings — degradation detected"
+    : "";
+  const badge = document.getElementById("simBadge");
+  badge.className = pause? "pause":"mine";
+  badge.textContent = pause? "PAUSED — expensive hour" : "MINING";
+  simBars.forEach((b,h)=>b.classList.toggle("now", h===simHour));
+  if(pause && simTick%3===0){
+    const light = KW*N_MINERS*price;
+    const lost  = (TH*HP/FX/24)*N_MINERS;
+    simSaved += Math.max(0, light-lost);
+    document.getElementById("simSave").textContent =
+      "net savings: €"+simSaved.toFixed(2)+" (demo)";
+  }
+  document.getElementById("simClock").textContent =
+    String(simHour).padStart(2,"0")+":00";
+}
+simStep();
+if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
+  setInterval(simStep, 1400);
+}
+</script>
+
+<!-- ════════════════════════════════════════════════════════════
+     EMBEDDED AGENT SOURCE — the Download button builds this file
+     in the browser. One page, zero missing-file 404s.
+     ════════════════════════════════════════════════════════════ -->
+<script type="text/x-python" id="agentSource">
+#!/usr/bin/env python3
+# ==================================================================
+#  QTMP MINER AGENT v1.0 (EN)
+#  Edge agent for Bitcoin mining farms.
+#
+#  Runs INSIDE the farm network (Raspberry/PC/Termux). The web
+#  console talks to this agent over HTTP with a token.
+#
+#  MODULES:
+#   1. Collector  - CGMiner/BMMiner/Braiins API (TCP 4028)
+#   2. QTMP core  - robust z-score between sibling boards (MAD)
+#   3. Curtailment- mine/pause per hour vs. electricity price
+#   3b.Savings    - verifiable net-savings ledger (billing basis)
+#   4. Adaptive   - thresholds learn from human feedback
+#   5. HTTP API   - /status /config /history /savings /feedback
+#   6. JSONL logs - the training set for the future ML layer
+#
+#  FAIL-SAFE BY DESIGN:
+#   - No price data  -> MINE (never pause blindly)
+#   - Agent down     -> miners keep running on stock firmware
+#   - Pause action fails -> retry + alert, never a lock-up
+#
+#  USAGE:
+#    pip install requests numpy
+#    python3 qtmp_miner_agent.py           (uses config.json)
+#    python3 qtmp_miner_agent.py --demo    (simulated farm)
+# ==================================================================
+
+import json, math, os, socket, sys, time, threading, secrets
+from collections import deque, defaultdict
+from datetime import datetime, timezone, date
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import numpy as np
+try:
+    import requests
+except ImportError:
+    requests = None
+
+# ------------------------------------------------------------------
+# CONFIG - overridden by config.json (editable from the console).
+# ------------------------------------------------------------------
+
+DEFAULT_CONFIG = {
+    "farm_name": "Unnamed farm",
+
+    # Token the console must send in the X-QTMP-Token header.
+    # If empty, a random one is generated at startup (and printed).
+    "api_token": "",
+    "api_port": 8787,
+    # Allowed CORS origin (your Netlify domain). "*" for testing only.
+    "cors_origin": "*",
+
+    # -- Miners ----------------------------------------------------
+    # type: "cgminer" (stock Antminer/Whatsminer) | "sim" (demo)
+    "miners": [
+        # {"name": "S19-01", "host": "192.168.1.101", "port": 4028, "type": "cgminer"},
+    ],
+    "poll_seconds": 60,
+
+    # -- QTMP engine (client-calibrated) ---------------------------
+    "qtmp": {
+        "window": 30,
+        "epsilon": 0.15,
+        "z_alert": 2.5,
+        "z_critical": 4.0,
+        "min_siblings": 3,
+        "fan_temp_alert": 2.0,
+        "hw_err_slope_alert": 2.0
+    },
+
+    # -- Curtailment -----------------------------------------------
+    "curtailment": {
+        "enabled": True,
+        "mode": "advisory",      # advisory | braiins_power | webhook
+        "hashrate_th": 100.0,
+        "power_kw": 3.05,
+        "hashprice_usd_th_day": 0.045,
+        "eur_usd": 1.08,
+        "margin": 0.05,
+        # "esios" uses api.esios.ree.es (free REE token),
+        # "url" reads a JSON [{hour,price_eur_kwh}], "fixed" uses fixed price.
+        "price_source": "fixed",
+        "esios_token": "",
+        "price_url": "",
+        "fixed_price_eur_kwh": 0.12,
+        "network_cost_eur_kwh": 0.04,
+        "webhooks": {}           # {"S19-01": "http://192.168.1.50/relay?on="}
+    },
+
+    # -- Success-fee billing ---------------------------------------
+    # TRANSPARENT BY DESIGN: the client sees the fee, the formula and
+    # the payment address. Billing applies only to NET savings
+    # (electricity avoided minus mining revenue lost) and only to
+    # EXECUTED pauses (advisory mode bills nothing).
+    "billing": {
+        "fee_pct": 0.25,
+        "operator": "QTMP Miner",
+        "payment_address": ""    # operator payment address (BTC/IBAN)
+    },
+
+    # -- Adaptive layer --------------------------------------------
+    # Adjusts z thresholds per metric from feedback (real/false alert).
+    "adaptive": {
+        "enabled": True,
+        "target_precision": 0.60,
+        "step": 0.15,
+        "z_min": 1.5,
+        "z_max": 6.0
+    },
+
+    "log_dir": "qtmp_logs"
+}
+
+CONFIG_PATH = "config.json"
+STATE_PATH = "adaptive_state.json"
+
+# ------------------------------------------------------------------
+# UTILITIES
+# ------------------------------------------------------------------
+
+def now_utc():
+    return datetime.now(timezone.utc)
+
+def deep_merge(base, override):
+    out = dict(base)
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+def load_config():
+    cfg = dict(DEFAULT_CONFIG)
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH) as f:
+                cfg = deep_merge(DEFAULT_CONFIG, json.load(f))
+        except Exception as e:
+            print(f"[CONFIG] Error reading {CONFIG_PATH}: {e} - using defaults")
+    if not cfg["api_token"]:
+        cfg["api_token"] = secrets.token_urlsafe(24)
+        print(f"[SECURITY] Token generated (save it in the console):")
+        print(f"           {cfg['api_token']}")
+        save_config(cfg)
+    return cfg
+
+def save_config(cfg):
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+# ------------------------------------------------------------------
+# 1 - COLLECTOR: CGMiner/BMMiner/Braiins API over TCP 4028
+# ------------------------------------------------------------------
+
+def cgminer_cmd(host, port, command, timeout=5):
+    """JSON command to the cgminer API. Returns dict or None."""
+    try:
+        s = socket.create_connection((host, port), timeout=timeout)
+        s.sendall(json.dumps({"command": command}).encode())
+        buf = b""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        s.close()
+        return json.loads(buf.replace(b"\x00", b"").decode(errors="ignore"))
+    except Exception:
+        return None
+
+def parse_stats(raw):
+    """Per hashboard: hashrate (GH/s), max chip temp, fan RPM, HW errors.
+    Field names vary across firmwares - defensive parsing."""
+    if not raw or "STATS" not in raw:
+        return None
+    boards, fans, hw = [], [], 0
+    for st in raw["STATS"]:
+        if not isinstance(st, dict):
+            continue
+        for i in range(1, 9):
+            rate = st.get(f"chain_rate{i}")
+            if rate in (None, "", 0, "0"):
+                continue
+            try:
+                rate = float(rate)
+            except (TypeError, ValueError):
+                continue
+            temps = []
+            for tk in (f"temp{i}", f"temp2_{i}", f"temp_chip{i}", f"temp_pcb{i}"):
+                tv = st.get(tk)
+                if tv not in (None, "", 0):
+                    try:
+                        temps += [float(x) for x in
+                                  str(tv).replace(" ", "").split("-") if x]
+                    except ValueError:
+                        pass
+            boards.append({
+                "idx": i,
+                "hashrate_gh": rate,
+                "temp_max": max(temps) if temps else None,
+                "temp_spread": (max(temps) - min(temps)) if len(temps) > 1 else None
+            })
+        for i in range(1, 9):
+            fv = st.get(f"fan{i}")
+            if fv not in (None, "", 0, "0"):
+                try:
+                    fans.append(float(fv))
+                except (TypeError, ValueError):
+                    pass
+        for hk in ("Hardware Errors", "hw_errors", "HW"):
+            if hk in st:
+                try:
+                    hw = max(hw, int(float(st[hk])))
+                except (TypeError, ValueError):
+                    pass
+    if not boards:
+        return None
+    return {"boards": boards, "fans": fans, "hw_errors": hw}
+
+# -- Simulated farm for --demo -------------------------------------
+class SimFarm:
+    def __init__(self, n_miners=6, boards_per=3, seed=7):
+        self.rng = np.random.default_rng(seed)
+        self.n = n_miners
+        self.bp = boards_per
+        self.t = 0
+        self.base_hr = 35000.0  # GH/s per board (~105 TH per machine)
+
+    def read(self, miner_idx):
+        self.t += 1
+        boards, fans = [], []
+        ambient = 28 + 4 * math.sin(self.t / 40)
+        for b in range(self.bp):
+            hr = self.base_hr * (1 + self.rng.normal(0, 0.012))
+            drift = 0.0
+            if miner_idx == 4 and b == 2:
+                drift = -0.00025 * self.t          # slow degradation
+            hr *= (1 + drift)
+            temp = ambient + 32 + self.rng.normal(0, 1.5)
+            boards.append({"idx": b + 1, "hashrate_gh": hr,
+                           "temp_max": temp,
+                           "temp_spread": abs(self.rng.normal(4, 1))})
+        for f in range(4):
+            rpm = 4200 + (ambient - 28) * 60 + self.rng.normal(0, 80)
+            if miner_idx == 2 and f == 1:
+                rpm += 1.8 * self.t                # fan compensating
+            fans.append(rpm)
+        return {"boards": boards, "fans": fans,
+                "hw_errors": int(max(0, self.rng.normal(2, 1)))}
+
+# ------------------------------------------------------------------
+# 2 - QTMP CORE: robust z-score between sibling boards
+# ------------------------------------------------------------------
+# Each board carries its own control group: its rack siblings.
+# Comparing against siblings cancels ambient temperature, grid
+# voltage and difficulty variance at once. MAD instead of std so an
+# already-broken board cannot poison the reference.
+# ------------------------------------------------------------------
+
+def robust_z(value, peers):
+    if len(peers) < 2:
+        return 0.0
+    med = float(np.median(peers))
+    mad = float(np.median(np.abs(np.array(peers) - med)))
+    sigma = 1.4826 * mad
+    if sigma <= 1e-9:
+        return 0.0
+    return (value - med) / sigma
+
+def n_eff(series):
+    """Effective sample size with lag-1 autocorrelation correction.
+    Critical here: hashrate is far more autocorrelated than price
+    returns - without this, z-scores explode."""
+    a = np.asarray(series, dtype=float)
+    n = len(a)
+    if n < 5:
+        return max(n, 1)
+    a = a - a.mean()
+    denom = float(np.dot(a, a))
+    if denom <= 1e-12:
+        return n
+    rho = float(np.dot(a[:-1], a[1:])) / denom
+    rho = max(-0.99, min(rho, 0.99))
+    return max(2.0, n * (1 - rho) / (1 + rho))
+
+class QTMPEngine:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        w = cfg["qtmp"]["window"]
+        self.hr = defaultdict(lambda: deque(maxlen=w))
+        self.fan_resid = defaultdict(lambda: deque(maxlen=w))
+        self.hw = defaultdict(lambda: deque(maxlen=w))
+        self.alerts = deque(maxlen=200)
+
+    def update(self, snapshot):
+        q = self.cfg["qtmp"]
+        new_alerts = []
+
+        all_board_means = {}
+        for m, data in snapshot.items():
+            if not data:
+                continue
+            for b in data["boards"]:
+                key = (m, b["idx"])
+                self.hr[key].append(b["hashrate_gh"])
+                all_board_means[key] = float(np.mean(self.hr[key]))
+            temps = [b["temp_max"] for b in data["boards"] if b["temp_max"]]
+            if data["fans"] and temps:
+                t = float(np.mean(temps))
+                for rpm in data["fans"]:
+                    self.fan_resid[m].append(rpm / max(t, 1.0))
+            self.hw[m].append(data["hw_errors"])
+
+        if len(all_board_means) >= q["min_siblings"]:
+            for key, mean_hr in all_board_means.items():
+                peers = [v for k, v in all_board_means.items() if k != key]
+                z = robust_z(mean_hr, peers)
+                ne = n_eff(list(self.hr[key]))
+                z_adj = z * math.sqrt(min(1.0, ne / max(len(self.hr[key]), 1)))
+                if z_adj < -q["z_alert"]:
+                    sev = "CRITICAL" if z_adj < -q["z_critical"] else "ALERT"
+                    new_alerts.append(self._alert(
+                        sev, "hashrate", f"{key[0]} board {key[1]}",
+                        z_adj, f"Board {z_adj:.1f} sigma below its siblings "
+                               f"({mean_hr/1000:.1f} TH/s)"))
+
+        for m, buf in self.fan_resid.items():
+            if len(buf) < 10:
+                continue
+            arr = np.array(buf)
+            z = robust_z(arr[-3:].mean(), list(arr[:-3]))
+            if z > self.cfg["qtmp"]["fan_temp_alert"]:
+                new_alerts.append(self._alert(
+                    "ALERT", "fan", m, z,
+                    f"Fans spinning {z:.1f} sigma harder for the same "
+                    f"temperature - check dust/bearing"))
+
+        for m, buf in self.hw.items():
+            if len(buf) < 10:
+                continue
+            y = np.array(buf, dtype=float)
+            x = np.arange(len(y))
+            slope = float(np.polyfit(x, y, 1)[0])
+            resid = y - np.polyval(np.polyfit(x, y, 1), x)
+            se = float(np.std(resid)) / math.sqrt(max(n_eff(y), 2))
+            zs = slope / se if se > 1e-9 else 0.0
+            if zs > self.cfg["qtmp"]["hw_err_slope_alert"]:
+                new_alerts.append(self._alert(
+                    "ALERT", "hw_errors", m, zs,
+                    f"Hardware errors trending up ({zs:.1f} sigma)"))
+
+        active = {(a["metric"], a["target"]) for a in self.alerts
+                  if a.get("open", True)}
+        for a in new_alerts:
+            if (a["metric"], a["target"]) not in active:
+                self.alerts.append(a)
+        return new_alerts
+
+    def _alert(self, sev, metric, target, z, msg):
+        return {"id": secrets.token_hex(4), "ts": now_utc().isoformat(),
+                "severity": sev, "metric": metric, "target": target,
+                "z": round(float(z), 2), "message": msg,
+                "open": True, "feedback": None}
+
+# ------------------------------------------------------------------
+# 3 - CURTAILMENT: mine only when the hour pays
+# ------------------------------------------------------------------
+
+class Curtailment:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.prices = {}
+        self.prices_date = None
+        self.decision = {"action": "MINE", "reason": "init"}
+
+    def breakeven(self):
+        c = self.cfg["curtailment"]
+        rev_usd_day = c["hashrate_th"] * c["hashprice_usd_th_day"]
+        rev_eur_day = rev_usd_day / c["eur_usd"]
+        kwh_day = c["power_kw"] * 24
+        return rev_eur_day / kwh_day
+
+    def fetch_prices(self):
+        c = self.cfg["curtailment"]
+        today = date.today().isoformat()
+        if self.prices_date == today and self.prices:
+            return
+        try:
+            if c["price_source"] == "esios" and c["esios_token"] and requests:
+                r = requests.get(
+                    "https://api.esios.ree.es/indicators/1001",
+                    headers={"x-api-key": c["esios_token"],
+                             "Accept": "application/json"},
+                    params={"start_date": f"{today}T00:00",
+                            "end_date": f"{today}T23:59"},
+                    timeout=10)
+                r.raise_for_status()
+                vals = r.json()["indicator"]["values"]
+                self.prices = {int(v["datetime"][11:13]): v["value"] / 1000.0
+                               for v in vals}
+            elif c["price_source"] == "url" and c["price_url"] and requests:
+                r = requests.get(c["price_url"], timeout=10)
+                r.raise_for_status()
+                self.prices = {int(x["hour"]): float(x["price_eur_kwh"])
+                               for x in r.json()}
+            else:
+                self.prices = {h: c["fixed_price_eur_kwh"] for h in range(24)}
+            self.prices_date = today
+        except Exception as e:
+            # FAIL-SAFE: with no prices, nothing gets paused
+            print(f"[CURTAIL] No prices ({e}) - fail-safe: MINE")
+            self.prices = {}
+            self.prices_date = None
+
+    def decide(self):
+        c = self.cfg["curtailment"]
+        if not c["enabled"]:
+            self.decision = {"action": "MINE", "reason": "curtailment disabled"}
+            return self.decision
+        self.fetch_prices()
+        h = now_utc().astimezone().hour
+        if h not in self.prices:
+            self.decision = {"action": "MINE",
+                             "reason": "no price data - fail-safe"}
+            return self.decision
+        total = self.prices[h] + c["network_cost_eur_kwh"]
+        be = self.breakeven()
+        if total > be * (1 - c["margin"]):
+            self.decision = {"action": "PAUSE",
+                             "reason": f"{total:.3f} EUR/kWh > break-even "
+                                       f"{be:.3f} (margin {c['margin']*100:.0f}%)",
+                             "price": total, "breakeven": be}
+        else:
+            self.decision = {"action": "MINE",
+                             "reason": f"{total:.3f} EUR/kWh <= break-even {be:.3f}",
+                             "price": total, "breakeven": be}
+        return self.decision
+
+    def act(self, miners):
+        c = self.cfg["curtailment"]
+        d = self.decision
+        if c["mode"] == "advisory" or d["action"] == "MINE":
+            return
+        if c["mode"] == "webhook" and requests:
+            for m in miners:
+                url = c["webhooks"].get(m.get("name", ""))
+                if url:
+                    try:
+                        requests.get(url + ("0" if d["action"] == "PAUSE" else "1"),
+                                     timeout=5)
+                    except Exception as e:
+                        print(f"[CURTAIL] webhook {m['name']} failed: {e} - "
+                              f"machine stays in its current state")
+        # braiins_power mode would lower the power target via the
+        # Braiins OS+ API. Kept advisory until client firmware is known.
+
+# ------------------------------------------------------------------
+# 3b - SAVINGS LEDGER: the verifiable billing basis
+# ------------------------------------------------------------------
+# For each PAUSE interval:
+#   electricity_avoided = kW x n_machines x hours x price
+#   mining_lost = (TH x hashprice/24 / eur_usd) x n x hours
+#   net_saving = electricity_avoided - mining_lost
+# Two monthly buckets:
+#   "executed" -> pause actually executed -> BILLABLE
+#   "advisory" -> recommendation only -> informative, NOT billable
+# Fee = fee_pct x executed net savings of the month.
+# ------------------------------------------------------------------
+
+class SavingsLedger:
+    PATH = "savings.json"
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.data = {"months": {}}
+        if os.path.exists(self.PATH):
+            try:
+                with open(self.PATH) as f:
+                    self.data = json.load(f)
+            except Exception:
+                pass
+
+    def record(self, decision, n_miners, executed, seconds):
+        if decision.get("action") != "PAUSE" or "price" not in decision:
+            return
+        if n_miners <= 0:
+            return
+        c = self.cfg["curtailment"]
+        hours = seconds / 3600.0
+        kwh   = c["power_kw"] * n_miners * hours
+        light = kwh * decision["price"]
+        lost  = (c["hashrate_th"] * c["hashprice_usd_th_day"]
+                 / c["eur_usd"] / 24.0) * n_miners * hours
+        net   = light - lost
+        month = date.today().strftime("%Y-%m")
+        bucket = "executed" if executed else "advisory"
+        m = self.data["months"].setdefault(month, {
+            b: {"paused_hours": 0.0, "kwh_avoided": 0.0,
+                "light_saved_eur": 0.0, "mining_lost_eur": 0.0,
+                "net_saving_eur": 0.0} for b in ("executed", "advisory")})
+        mb = m[bucket]
+        mb["paused_hours"]    = round(mb["paused_hours"] + hours * n_miners, 3)
+        mb["kwh_avoided"]     = round(mb["kwh_avoided"] + kwh, 3)
+        mb["light_saved_eur"] = round(mb["light_saved_eur"] + light, 4)
+        mb["mining_lost_eur"] = round(mb["mining_lost_eur"] + lost, 4)
+        mb["net_saving_eur"]  = round(mb["net_saving_eur"] + net, 4)
+        with open(self.PATH, "w") as f:
+            json.dump(self.data, f, indent=2)
+
+    def statement(self):
+        b = self.cfg["billing"]
+        out = []
+        for month in sorted(self.data["months"]):
+            m = self.data["months"][month]
+            net_exec = m["executed"]["net_saving_eur"]
+            out.append({
+                "month": month,
+                "executed": m["executed"],
+                "advisory": m["advisory"],
+                "fee_pct": b["fee_pct"],
+                "fee_eur": round(max(0.0, net_exec) * b["fee_pct"], 2),
+                "client_keeps_eur": round(max(0.0, net_exec)
+                                          * (1 - b["fee_pct"]), 2),
+                "operator": b["operator"],
+                "payment_address": b["payment_address"] or "(not configured)"
+            })
+        return out
+
+# ------------------------------------------------------------------
+# 4 - ADAPTIVE LAYER: thresholds learn from human feedback
+# ------------------------------------------------------------------
+
+class Adaptive:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.state = {"hashrate": {"tp": 1, "fp": 1},
+                      "fan": {"tp": 1, "fp": 1},
+                      "hw_errors": {"tp": 1, "fp": 1}}
+        if os.path.exists(STATE_PATH):
+            try:
+                with open(STATE_PATH) as f:
+                    self.state = deep_merge(self.state, json.load(f))
+            except Exception:
+                pass
+
+    def feedback(self, metric, real):
+        a = self.cfg["adaptive"]
+        if not a["enabled"] or metric not in self.state:
+            return
+        self.state[metric]["tp" if real else "fp"] += 1
+        s = self.state[metric]
+        precision = s["tp"] / (s["tp"] + s["fp"])
+        q = self.cfg["qtmp"]
+        key = {"hashrate": "z_alert", "fan": "fan_temp_alert",
+               "hw_errors": "hw_err_slope_alert"}[metric]
+        if precision < a["target_precision"]:
+            q[key] = min(a["z_max"], q[key] + a["step"])
+        elif precision > a["target_precision"] + 0.15:
+            q[key] = max(a["z_min"], q[key] - a["step"])
+        save_config(self.cfg)
+        with open(STATE_PATH, "w") as f:
+            json.dump(self.state, f, indent=2)
+        return {"metric": metric, "precision": round(precision, 3),
+                "new_threshold": q[key]}
+
+# ------------------------------------------------------------------
+# 5 - JSONL LOGS: the future ML training set
+# ------------------------------------------------------------------
+
+def log_snapshot(cfg, payload):
+    os.makedirs(cfg["log_dir"], exist_ok=True)
+    path = os.path.join(cfg["log_dir"], f"{date.today().isoformat()}.jsonl")
+    with open(path, "a") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+# ------------------------------------------------------------------
+# 6 - HTTP API with token - what the web console consumes
+# ------------------------------------------------------------------
+
+class AgentState:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.engine = QTMPEngine(cfg)
+        self.curtail = Curtailment(cfg)
+        self.adaptive = Adaptive(cfg)
+        self.ledger = SavingsLedger(cfg)
+        self.last_snapshot = {}
+        self.last_poll = None
+        self.history = deque(maxlen=288)
+        self.lock = threading.Lock()
+
+STATE = None
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, code, obj):
+        body = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin",
+                         STATE.cfg["cors_origin"])
+        self.send_header("Access-Control-Allow-Headers",
+                         "X-QTMP-Token, Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _auth(self):
+        tok = self.headers.get("X-QTMP-Token", "")
+        return secrets.compare_digest(tok, STATE.cfg["api_token"])
+
+    def do_OPTIONS(self):
+        self._send(204, {})
+
+    def do_GET(self):
+        if not self._auth():
+            return self._send(401, {"error": "invalid token"})
+        with STATE.lock:
+            if self.path == "/status":
+                return self._send(200, {
+                    "farm": STATE.cfg["farm_name"],
+                    "ts": STATE.last_poll,
+                    "curtailment": STATE.curtail.decision,
+                    "breakeven": round(STATE.curtail.breakeven(), 4),
+                    "prices": STATE.curtail.prices,
+                    "miners": STATE.last_snapshot,
+                    "alerts": list(STATE.engine.alerts),
+                    "thresholds": STATE.cfg["qtmp"],
+                    "adaptive": STATE.adaptive.state
+                })
+            if self.path == "/config":
+                cfg = dict(STATE.cfg)
+                cfg["api_token"] = "***"      # never echo the token
+                return self._send(200, cfg)
+            if self.path == "/history":
+                return self._send(200, list(STATE.history))
+            if self.path == "/savings":
+                return self._send(200, {
+                    "mode": STATE.cfg["curtailment"]["mode"],
+                    "note": ("advisory: savings shown are POTENTIAL, "
+                             "not billable, until execution is enabled")
+                            if STATE.cfg["curtailment"]["mode"] == "advisory"
+                            else "executed, verifiable savings",
+                    "statement": STATE.ledger.statement()
+                })
+        self._send(404, {"error": "unknown route"})
+
+    def do_POST(self):
+        if not self._auth():
+            return self._send(401, {"error": "invalid token"})
+        n = int(self.headers.get("Content-Length", 0))
+        try:
+            data = json.loads(self.rfile.read(n) or b"{}")
+        except json.JSONDecodeError:
+            return self._send(400, {"error": "invalid JSON"})
+        with STATE.lock:
+            if self.path == "/config":
+                data.pop("api_token", None)   # token cannot change via API
+                STATE.cfg.update(deep_merge(STATE.cfg, data))
+                save_config(STATE.cfg)
+                return self._send(200, {"ok": True})
+            if self.path == "/feedback":
+                aid, real = data.get("alert_id"), bool(data.get("real"))
+                for a in STATE.engine.alerts:
+                    if a["id"] == aid:
+                        a["feedback"] = "real" if real else "false"
+                        a["open"] = False
+                        res = STATE.adaptive.feedback(a["metric"], real)
+                        log_snapshot(STATE.cfg, {"type": "feedback",
+                                                 "alert": a, "result": res})
+                        return self._send(200, {"ok": True, "adaptive": res})
+                return self._send(404, {"error": "alert not found"})
+        self._send(404, {"error": "unknown route"})
+
+    def log_message(self, *a):
+        pass
+
+# ------------------------------------------------------------------
+# MAIN LOOP
+# ------------------------------------------------------------------
+
+def poll_loop(demo=False):
+    sim = SimFarm() if demo else None
+    while True:
+        snapshot = {}
+        if demo:
+            for i in range(sim.n):
+                snapshot[f"SIM-{i:02d}"] = sim.read(i)
+        else:
+            for m in STATE.cfg["miners"]:
+                if m.get("type") == "sim":
+                    continue
+                raw = cgminer_cmd(m["host"], m.get("port", 4028), "stats")
+                snapshot[m["name"]] = parse_stats(raw)
+                if snapshot[m["name"]] is None:
+                    print(f"[POLL] {m['name']} not responding")
+
+        with STATE.lock:
+            STATE.last_snapshot = {
+                k: v for k, v in snapshot.items() if v is not None}
+            STATE.last_poll = now_utc().isoformat()
+            new = STATE.engine.update(STATE.last_snapshot)
+            STATE.curtail.decide()
+            STATE.curtail.act(STATE.cfg["miners"])
+            n_m = len(STATE.cfg["miners"]) or len(STATE.last_snapshot)
+            executed = STATE.cfg["curtailment"]["mode"] != "advisory"
+            STATE.ledger.record(STATE.curtail.decision, n_m,
+                                executed, STATE.cfg["poll_seconds"])
+            total_th = sum(b["hashrate_gh"] for d in STATE.last_snapshot.values()
+                           for b in d["boards"]) / 1000.0
+            STATE.history.append({
+                "ts": STATE.last_poll,
+                "total_th": round(total_th, 1),
+                "curtail": STATE.curtail.decision["action"],
+                "n_alerts": len([a for a in STATE.engine.alerts if a["open"]])
+            })
+            log_snapshot(STATE.cfg, {"type": "snapshot",
+                                     "ts": STATE.last_poll,
+                                     "miners": STATE.last_snapshot,
+                                     "curtail": STATE.curtail.decision})
+        for a in new:
+            print(f"[{a['severity']}] {a['target']}: {a['message']}")
+        d = STATE.curtail.decision
+        print(f"[{now_utc().strftime('%H:%M')}] {total_th:.0f} TH/s - "
+              f"curtailment: {d['action']} ({d['reason']})")
+        time.sleep(STATE.cfg["poll_seconds"])
+
+def main():
+    global STATE
+    demo = "--demo" in sys.argv
+    cfg = load_config()
+    STATE = AgentState(cfg)
+    print("=" * 62)
+    print(f"  QTMP MINER AGENT - {cfg['farm_name']}")
+    print(f"  API: http://0.0.0.0:{cfg['api_port']}  (header X-QTMP-Token)")
+    print(f"  Mode: {'DEMO (simulated farm)' if demo else 'PRODUCTION'}")
+    print(f"  Curtailment: {cfg['curtailment']['mode']}")
+    print(f"  Break-even: {STATE.curtail.breakeven():.3f} EUR/kWh")
+    print("=" * 62)
+    t = threading.Thread(target=poll_loop, args=(demo,), daemon=True)
+    t.start()
+    srv = ThreadingHTTPServer(("0.0.0.0", cfg["api_port"]), Handler)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[EXIT] Agent stopped - your miners keep running on their own.")
+
+if __name__ == "__main__":
+    main()
+</script>
+</body>
+</html>
