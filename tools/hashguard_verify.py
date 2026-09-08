@@ -21,7 +21,8 @@ What it checks
 3. Each day's records reproduce the sealed Merkle root, and
    seal_hash == SHA256d(prev_seal || merkle_root).
 4. The seals chain: each day's ``prev_seal`` is the previous day's seal hash.
-5. Every inclusion proof in the statement validates against its root.
+5. Every inclusion proof validates against its root, and describes a tree of
+   the size the seal committed to.
 6. Signatures verify against the device public key (ed25519, if provided).
 7. The money adds up: fee + client_keeps == billable, fee == billable * fee_bp
    // 10000, and no line bills more energy than the telemetry corroborated.
@@ -271,14 +272,21 @@ def main() -> int:
     if not statement.get("proofs"):
         report.note("the statement carries no inclusion proofs to sample")
     roots = {d["day"]: bytes.fromhex(d["merkle_root"]) for d in statement.get("days", [])}
+    counts = {d["day"]: int(d["leaf_count"]) for d in statement.get("days", [])}
     for item in statement.get("proofs", []):
         leaf = record_hash(item["record"])
+        # The proof has to describe the tree the seal committed to, not merely a
+        # tree of the same depth. A Bitcoin-shaped tree whose last leaf is
+        # duplicated shares its root (CVE-2012-2459), so the leaf count is what
+        # says which tree this is -- and the seal is where that count is fixed.
+        sized = int(item["proof"].get("leaf_count", -1)) == counts.get(item["day"])
         ok_leaf = leaf.hex() == item["leaf"]
-        ok_path = ok_leaf and verify_proof(leaf, item["proof"], roots.get(item["day"], b""))
+        ok_path = sized and ok_leaf and verify_proof(leaf, item["proof"], roots.get(item["day"], b""))
         report.check(
             ok_path,
             f"seq {item['record']['seq']} ({item['day']}) is in the sealed tree",
-            "the proof does not lead to the sealed root",
+            "the proof does not lead to the sealed root, or describes a tree of a "
+            "different size than the seal committed to",
         )
 
     print("\nBilling arithmetic")
