@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HashGuard console</title>
+
+<!-- No inline script or style anywhere on this page, so the policy can be
+     strict. v1 shipped no CSP at all and built its alert list by concatenating
+     agent-supplied strings into innerHTML (AUDIT-11); this is the backstop for
+     that class of mistake, and console.js is the fix.
+
+     connect-src has to reach an agent whose address the operator chooses, so it
+     permits loopback and the agent's port rather than pretending to be tighter
+     than it can be. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self';
+  style-src 'self' https://fonts.googleapis.com;
+  font-src https://fonts.gstatic.com;
+  connect-src 'self' http://127.0.0.1:* http://localhost:* http://*:8787 https://*:8787 https://*:443;
+  img-src 'self' data:;
+  base-uri 'none';
+  form-action 'none';
+  frame-ancestors 'none';
+">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="console.css">
+</head>
+<body>
+
+<div id="topbar">
+  <h1>HASH<span>GUARD</span></h1>
+  <span id="farmName">—</span>
+  <span id="connDot" title="Agent connection"></span>
+  <span id="lastTs" class="mono small muted"></span>
+  <div class="spacer"></div>
+  <button class="icon-btn" id="btnConnection">Connection</button>
+  <button class="icon-btn" id="btnSignOut">Sign out</button>
+</div>
+
+<div id="curtailBanner" class="mine">
+  <span class="badge" id="curtailAction">—</span>
+  <span id="curtailReason" class="muted">Waiting for the agent…</span>
+  <div class="spacer"></div>
+  <span id="corroboration" class="mono small muted"></span>
+</div>
+
+<main>
+  <div class="col">
+
+    <section class="panel">
+      <h2>Rack · each board against its siblings</h2>
+      <div id="rack"><div class="empty">No data yet.</div></div>
+      <div class="rack-legend">
+        <span><span class="lg" style="background:var(--ok)"></span>normal</span>
+        <span><span class="lg" style="background:var(--warn)"></span>below alert threshold</span>
+        <span><span class="lg" style="background:var(--bad)"></span>below critical</span>
+        <span><span class="lg" style="background:var(--dead)"></span>no signal</span>
+        <span class="mono" id="totalTh"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Today's price against break-even</h2>
+      <div id="priceChart"><div class="empty">No curve yet.</div></div>
+      <div class="small muted" id="priceMeta"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Alerts</h2>
+      <div id="alerts"><div class="empty">No alerts. Silence is information too.</div></div>
+    </section>
+
+  </div>
+
+  <div class="col">
+
+    <section class="panel">
+      <h2>This month</h2>
+      <div id="ledger"><div class="empty">No statement yet.</div></div>
+    </section>
+
+    <section class="panel">
+      <h2>Check the invoice yourself</h2>
+      <p class="small muted" style="margin-bottom:14px">
+        This runs in your browser, with WebCrypto, using none of the operator's
+        code. It re-derives each record's hash, walks every inclusion proof to
+        the day's sealed Merkle root, checks that each seal is
+        <span class="mono">SHA256d(prev_seal ‖ merkle_root)</span> and that the
+        days chain to each other, and redoes the fee arithmetic in integers.
+        It works because the ledger holds no floating point: your browser and
+        the agent serialise the same bytes.
+      </p>
+      <button class="verify-btn" id="btnVerify">Verify this statement</button>
+      <div id="verifySummary" class="hidden"></div>
+      <div id="verifyOutput" style="margin-top:14px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Calibration</h2>
+      <div id="calBody"><div class="empty">Loading the agent's settings…</div></div>
+      <button class="save-btn" id="btnSaveCal">Save to the agent</button>
+      <div id="saveMsg"></div>
+    </section>
+
+  </div>
+</main>
+
+<div id="settings" class="hidden">
+  <div class="set-card">
+    <h2>Connect to your agent</h2>
+    <p class="small muted">
+      The agent runs on your own hardware, inside your own network. This page
+      never sees your farm unless you point it at one.
+    </p>
+
+    <label for="agentUrl">Agent URL</label>
+    <input id="agentUrl" inputmode="url" spellcheck="false"
+           placeholder="http://127.0.0.1:8787">
+
+    <label for="agentTok">Token (sent as X-HashGuard-Token)</label>
+    <input id="agentTok" type="password" autocomplete="current-password"
+           placeholder="the token the agent printed at startup">
+
+    <div id="connErr"></div>
+
+    <p class="note">
+      The token is the only thing standing between this page and your farm, and
+      it is the only thing this page stores — in <span class="mono">sessionStorage</span>,
+      so it is gone when you close the tab. The agent binds to loopback by
+      default; for remote access put it behind a VPN and use that address here,
+      rather than exposing the port.
+    </p>
+
+    <div class="row">
+      <button class="ghost" id="btnCancel">Cancel</button>
+      <button class="primary" id="btnConnect">Connect</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  HashGuard v2 · the agent decides, the ledger records, and both are checkable ·
+  <a href="../index-2.html">about</a>
+</footer>
+
+<script src="console.js"></script>
+</body>
+</html>

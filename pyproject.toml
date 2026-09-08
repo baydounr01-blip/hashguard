@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hashguard"
+version = "2.0.0"
+description = "Curtailment and health monitoring for mining farms, with a savings ledger neither party can quietly rewrite."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Rami Baydoun Nabhan" }]
+keywords = ["bitcoin", "mining", "curtailment", "merkle", "audit", "telemetry"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Monitoring",
+  "Topic :: Security :: Cryptography",
+]
+
+# The agent core runs on the standard library alone. That is a security
+# property, not an aesthetic one: there is no third-party code in the path
+# between a miner's socket and a signed ledger record.
+dependencies = []
+
+[project.optional-dependencies]
+# ed25519 device keys. Strongly recommended: without it the agent falls back to
+# HMAC, and HMAC seals cannot be checked by anyone who does not also hold a
+# secret capable of forging them.
+sign = ["cryptography>=41"]
+test = ["pytest>=7", "cryptography>=41"]
+
+[project.scripts]
+hashguard = "hashguard.agent:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
