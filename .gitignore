@@ -1,0 +1,29 @@
+# Secrets. Never commit these.
+config.json
+device_key.json
+*.pem
+*.key
+
+# Measurements. They belong to the farm that produced them, not to this repo.
+ledger/
+logs/
+adaptive_state.json
+statement*.json
+device_public.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors and platforms
+.DS_Store
+.idea/
+.vscode/
