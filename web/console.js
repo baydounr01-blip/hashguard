@@ -539,7 +539,11 @@ async function verifyStatement() {
 
   // 2. Every sampled record really is inside the day it claims.
   const roots = {};
-  days.forEach((day) => (roots[day.day] = fromHex(day.merkle_root)));
+  const counts = {};
+  days.forEach((day) => {
+    roots[day.day] = fromHex(day.merkle_root);
+    counts[day.day] = Number(day.leaf_count);
+  });
   for (const item of statement.proofs || []) {
     let leaf = null;
     try {
@@ -549,6 +553,17 @@ async function verifyStatement() {
       continue;
     }
     if (!check(toHex(leaf) === item.leaf, `seq ${item.record.seq}: record hashes to its stated leaf`)) {
+      continue;
+    }
+    // A tree whose last leaf is duplicated shares its root (CVE-2012-2459), so
+    // the proof must also claim the size the seal committed to.
+    if (
+      !check(
+        Number(item.proof.leaf_count) === counts[item.day],
+        `seq ${item.record.seq}: proof describes the tree size the seal committed to`,
+        `proof says ${item.proof.leaf_count} records, the seal says ${counts[item.day]}`
+      )
+    ) {
       continue;
     }
     const ok = await verifyInclusion(leaf, item.proof, roots[item.day]);
