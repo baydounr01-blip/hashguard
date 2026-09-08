@@ -48,7 +48,15 @@ jobs:
         run: |
           set -e
           mkdir -p /tmp/hg && cd /tmp/hg
-          timeout 25 python3 -m hashguard --demo > run.log 2>&1 || true
+          # -u matters: timeout stops the agent with SIGTERM, which does not
+          # flush Python's block-buffered stdout when it is redirected to a
+          # file. Without it the banner is written and then lost, and this step
+          # fails for a reason that has nothing to do with the agent.
+          timeout 25 python3 -u -m hashguard --demo > run.log 2>&1 || true
+          # Echo the banner so a future failure here is diagnosable, with the
+          # generated token redacted -- it is throwaway, but CI logs are not the
+          # place to practise printing secrets.
+          sed 's/^ *[A-Za-z0-9_-]\{32,\}$/           <token redacted>/' run.log
           grep -q "hmac-sha256" run.log
           grep -q "install 'cryptography'" run.log
           test -s ledger/records/*.jsonl

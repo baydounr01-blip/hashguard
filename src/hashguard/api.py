@@ -252,6 +252,10 @@ def make_handler(state: AgentState):
             if not self._authorized():
                 return
             if not self._origin_allowed_for_write():
+                # The body is never read on this path either, so the connection
+                # cannot carry another request: CI caught the agent parsing a
+                # leftover JSON body as the next request line.
+                self.close_connection = True
                 return self._send(403, {"error": "origin not allowed to write"})
             data = self._read_body()
             if data is None:
