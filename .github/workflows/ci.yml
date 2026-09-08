@@ -1,0 +1,67 @@
+name: hashguard
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: "tests (py${{ matrix.python }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: pip install -e ".[test]"
+      - name: Test suite
+        run: pytest -q
+
+  zero-dependency-check:
+    name: "the agent runs on the standard library alone"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with no optional extras
+        run: pip install -e .
+      - name: Confirm nothing third-party was pulled in
+        run: |
+          set -e
+          installed=$(pip list --format=freeze --not-required \
+            | grep -viE '^(hashguard|pip|setuptools|wheel)' || true)
+          if [ -n "$installed" ]; then
+            echo "Unexpected runtime dependencies:"; echo "$installed"; exit 1
+          fi
+          echo "No third-party runtime dependencies."
+      - name: The agent must still start and seal without 'cryptography'
+        run: |
+          set -e
+          mkdir -p /tmp/hg && cd /tmp/hg
+          timeout 25 python3 -m hashguard --demo > run.log 2>&1 || true
+          grep -q "hmac-sha256" run.log
+          grep -q "install 'cryptography'" run.log
+          test -s ledger/records/*.jsonl
+          echo "Degraded cleanly to HMAC and said so."
+
+  end-to-end-verification:
+    name: "an invoice verifies, and a tampered one does not"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[test]"
+      - name: Build a month, verify it, break it, watch the verifier catch it
+        run: python3 scripts/demo_verification.py
