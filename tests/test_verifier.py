@@ -218,6 +218,31 @@ def test_a_later_month_verifies_even_though_it_does_not_start_at_genesis(
     assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) == 0
 
 
+def test_a_proof_declaring_the_wrong_leaf_count_is_refused(tmp_path, verifier, monkeypatch):
+    """The other half of the CVE-2012-2459 defence.
+
+    A Merkle root does not pin how many leaves produced it -- a tree whose last
+    leaf is duplicated shares its parent's root. The seal commits the record
+    count, so a proof describing a differently sized tree has to be refused even
+    when its path happens to reach the sealed root.
+    """
+    identity, ledger = build_month(tmp_path)
+    month = months_of(ledger)[0]
+    statement = ledger.statement(month)
+    assert statement["proofs"], "this test needs a proof to tamper with"
+    statement["proofs"][0]["proof"]["leaf_count"] += 1
+
+    statement_path = tmp_path / "statement.json"
+    key_path = tmp_path / "device_public.json"
+    statement_path.write_text(json.dumps(statement, indent=2))
+    key_path.write_text(json.dumps(identity.public(), indent=2))
+
+    assert (
+        run_verifier(verifier, monkeypatch, str(statement_path), ledger.records_dir, str(key_path))
+        != 0
+    )
+
+
 def test_missing_records_fail_the_verifier(tmp_path, verifier, monkeypatch):
     """An invoice you cannot check against raw records is not an invoice."""
     identity, ledger = build_month(tmp_path)
