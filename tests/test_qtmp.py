@@ -25,10 +25,27 @@ def test_median_handles_both_parities():
 
 
 def test_robust_z_is_not_poisoned_by_a_broken_peer():
-    """The point of MAD: one already-dead board must not hide the next one."""
-    healthy = [100.0] * 8
+    """The point of MAD: one already-dead board must not hide the next one.
+
+    The peers carry realistic spread. Perfectly identical peers would have zero
+    spread, which trips the degenerate-reference guard below and would test
+    nothing about robustness.
+    """
+    import statistics
+
+    healthy = [100.0, 101.0, 99.0, 100.5, 99.5, 100.2, 99.8, 100.1]
     with_a_corpse = healthy + [1.0]
-    assert robust_z(90.0, with_a_corpse) < -1.0
+
+    # The median absolute deviation ignores the corpse, so a board sagging to
+    # 90 GH/s is still many sigmas out and gets caught.
+    assert robust_z(90.0, with_a_corpse) < -10.0
+
+    # The comparison the module docstring rests on: a standard deviation would
+    # have been inflated by that same corpse until the sagging board vanished
+    # into it, well inside one sigma.
+    mean = statistics.fmean(with_a_corpse)
+    deviation = statistics.pstdev(with_a_corpse)
+    assert abs((90.0 - mean) / deviation) < 1.0
 
 
 def test_a_degenerate_reference_yields_no_evidence():
