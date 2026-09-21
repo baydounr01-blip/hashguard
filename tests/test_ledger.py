@@ -288,3 +288,116 @@ def test_advisory_intervals_are_never_billed(tmp_path):
     assert totals["advisory_net_saving_micro_eur"] > 0, (
         "advisory savings are still measured and shown, they are simply not charged"
     )
+
+
+# -- the signature rule and its activation ---------------------------------
+
+
+def activated_ledger(tmp_path, activate_from, days=4):
+    """A ledger whose activation day falls in the middle of the days it seals."""
+    identity = DeviceIdentity.generate()
+    ledger = GuardedLedger(
+        identity, base_dir=str(tmp_path / "ledger"), activate_from=activate_from
+    )
+    for back in range(days, 0, -1):
+        day = datetime.now(timezone.utc) - timedelta(days=back)
+        for hour in (9, 20):
+            ledger.record(
+                Interval(
+                    "PAUSE", True, MACHINES, POLL_SECONDS, to_ppm("0.31"), to_ppm("0.098"),
+                    to_wh("3.05", POLL_SECONDS, MACHINES), to_micro("0.63"), FULL_FARM_GH, 350,
+                ),
+                when=day.replace(hour=hour, minute=0, second=0, microsecond=0),
+            )
+        ledger.seal_day(day.date().isoformat())
+    return identity, ledger
+
+
+def test_a_ledger_crossing_the_activation_date_seals_each_day_under_exactly_one_rule(tmp_path):
+    """The property that keeps a day from having two readings: before the
+    activation day, the v2.0.0 format and only that; from it, the farm-bound
+    format and only that."""
+    from datetime import date as _date
+
+    from hashguard.rules import declared_rule
+
+    activate = (_date.today() - timedelta(days=2)).isoformat()
+    identity, ledger = activated_ledger(tmp_path, activate, days=4)
+
+    seals = {seal["day"]: seal for seal in ledger.seals()}
+    assert len(seals) == 4
+    for day, seal in seals.items():
+        expected = 2 if day >= activate else 1
+        assert declared_rule(seal) == expected, f"{day} should be rule {expected}"
+        if expected == 2:
+            assert seal["farm_id"] == identity.farm_id
+        else:
+            assert "farm_id" not in seal, "a legacy seal must be byte-identical to v2.0.0's"
+            assert "rule" not in seal
+        ok, reason = verify_seal(seal, ledger.day_records(day), identity.public(), activate)
+        assert ok, f"{day}: {reason}"
+    assert {declared_rule(s) for s in seals.values()} == {1, 2}, (
+        "this test is only meaningful if the activation day is actually crossed"
+    )
+
+
+def test_a_seal_under_the_wrong_rule_for_its_date_is_refused(tmp_path):
+    from datetime import date as _date
+
+    activate = (_date.today() - timedelta(days=2)).isoformat()
+    identity, ledger = activated_ledger(tmp_path, activate, days=4)
+    seals = {seal["day"]: seal for seal in ledger.seals()}
+    after = max(day for day in seals if day >= activate)
+    before = min(day for day in seals if day < activate)
+
+    # The same seals, judged against an activation day that moved.
+    ok, reason = verify_seal(seals[after], ledger.day_records(after), identity.public(), "2099-01-01")
+    assert not ok and "must be rule 1" in reason
+    ok, reason = verify_seal(seals[before], ledger.day_records(before), identity.public(), "2000-01-01")
+    assert not ok and "must be rule 2" in reason
+
+
+def test_activation_cannot_rewrite_the_rule_of_a_sealed_day(tmp_path):
+    """RAMI's "the rule never regresses within a branch", in one farm's ledger:
+    once a day is sealed, no later activation can change which format it
+    should have been sealed in."""
+    identity, ledger = build_ledger(tmp_path, days=2)
+    sealed = max(ledger.days())
+
+    with pytest.raises(LedgerError, match="already activated"):
+        GuardedLedger(identity, base_dir=ledger.base_dir, activate_from="2099-01-01")
+
+    os.remove(ledger.activation_path)
+    with pytest.raises(LedgerError, match="already sealed"):
+        GuardedLedger(identity, base_dir=ledger.base_dir, activate_from=sealed)
+
+
+def test_a_ledger_activated_for_another_farm_is_refused(tmp_path):
+    """A device that is not this farm's does not get to append to its ledger,
+    even though its key would produce perfectly valid-looking signatures."""
+    _, ledger = build_ledger(tmp_path, days=1)
+    stranger = DeviceIdentity.generate()
+    with pytest.raises(LedgerError, match="another farm's ledger"):
+        GuardedLedger(stranger, base_dir=ledger.base_dir)
+
+
+def test_the_statement_is_signed_over_its_own_totals(tmp_path):
+    """v2.0.0 signed the seals but not the document around them, so the fee and
+    the totals a client was handed were unattested."""
+    from hashguard.identity import verify_signature
+    from hashguard.rules import statement_message
+
+    identity, ledger = build_ledger(tmp_path, days=1)
+    for month in months_in(ledger):
+        statement = ledger.statement(month)
+        farm = identity.farm_id
+        assert verify_signature(
+            identity.public(), statement_message(farm, statement), statement["signature"]
+        )
+        inflated = {
+            **statement,
+            "totals": {**statement["totals"], "billable_net_saving_micro_eur": 999_999_999},
+        }
+        assert not verify_signature(
+            identity.public(), statement_message(farm, inflated), statement["signature"]
+        ), "re-totalling a statement must not survive its own signature"
