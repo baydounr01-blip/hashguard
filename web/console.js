@@ -30,7 +30,7 @@ let lastStatus = null;
 let calibrationBuilt = false;
 const calState = {};
 
-/* ───────────────────────── crypto ───────────────────────── */
+/* ────────────────────── crypto ─────────────────────── */
 
 async function sha256(bytes) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
@@ -113,7 +113,7 @@ async function verifyInclusion(leaf, proof, root) {
 
 const GENESIS_PROMISE = sha256d(encoder.encode("hashguard/v2/genesis"));
 
-/* ───────────────────────── DOM helpers ───────────────────── */
+/* ────────────────────── DOM helpers ───────────────── */
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -136,7 +136,7 @@ function eur(micro) {
   return (value < 0 ? "-" : "") + "€" + Math.abs(value).toFixed(2);
 }
 
-/* ───────────────────────── transport ─────────────────────── */
+/* ────────────────────── transport ──────────────────── */
 
 async function api(path, options) {
   if (!AGENT) throw new Error("no agent configured");
@@ -157,7 +157,7 @@ async function api(path, options) {
   return response.json();
 }
 
-/* ───────────────────────── connection ────────────────────── */
+/* ────────────────────── connection ─────────────────── */
 
 function openSettings() {
   document.getElementById("agentUrl").value = AGENT;
@@ -204,7 +204,7 @@ function signOut() {
   openSettings();
 }
 
-/* ───────────────────────── polling ───────────────────────── */
+/* ────────────────────── polling ────────────────────── */
 
 function start() {
   poll();
@@ -227,7 +227,7 @@ async function poll() {
   }
 }
 
-/* ───────────────────────── rendering ─────────────────────── */
+/* ────────────────────── rendering ──────────────────── */
 
 function zColour(z, alertZ, criticalZ) {
   if (z === null || z === undefined || !isFinite(z)) return "var(--dead)";
@@ -403,7 +403,7 @@ async function sendFeedback(id, real) {
   }
 }
 
-/* ───────────────────────── the ledger ────────────────────── */
+/* ────────────────────── the ledger ─────────────────── */
 
 let currentStatement = null;
 
@@ -427,6 +427,7 @@ async function renderLedger() {
 
     const rows = [
       ["Month", statement.month, ""],
+      ["Farm", statement.farm_id ? statement.farm_id.slice(0, 16) + "…" : "not named (pre-2.1)", ""],
       ["Sealed days", String((statement.days || []).length), ""],
       ["Gross measured savings", eur(totals.gross_net_saving_micro_eur), ""],
       ["Billable after corroboration", eur(totals.billable_net_saving_micro_eur), ""],
@@ -501,6 +502,39 @@ async function verifyStatement() {
 
   check(statement.spec === SPEC, "The statement uses a spec version this console knows");
 
+  // 0. Which farm, and from which day the seals say so. A seal signed over a
+  //    message that names no farm can be presented as any farm's by anyone
+  //    holding the key; from the activation day the farm id is inside the
+  //    signed bytes. This page cannot check a signature, but it can check that
+  //    every day claims exactly the rule its date requires -- never both.
+  const activation = statement.activation;
+  const farmId = statement.farm_id || "";
+  let fromDay = null;
+  if (!activation) {
+    note(
+      "This statement predates farm-bound signatures. Its seals are signed over a message " +
+        "that names no farm, so a seal produced for another farm with the same key would " +
+        "look identical here. Ask for a statement from HashGuard 2.1 or later."
+    );
+  } else {
+    fromDay = activation.from_day || null;
+    check(
+      activation.kind === "activation/1",
+      "The activation entry is of a kind this console knows"
+    );
+    check(
+      !!farmId && activation.farm_id === farmId,
+      "The statement and its activation entry name the same farm",
+      `farm ${farmId.slice(0, 16)}… · seals name it from ${fromDay} onward`
+    );
+    if (statement.device && statement.device.farm_id) {
+      check(
+        statement.device.farm_id === farmId,
+        "The statement is for the farm its own device key names"
+      );
+    }
+  }
+
   // 1. The seals chain, day to day. A statement covers one month, so its first
   //    day usually chains to a seal from the month before: a real link, but not
   //    checkable from this document alone.
@@ -516,6 +550,14 @@ async function verifyStatement() {
       computed === day.seal_hash,
       `${day.day}: seal_hash = SHA256d(prev_seal ‖ merkle_root)`,
       "the same construction that chains Bitcoin block headers"
+    );
+    const declaredRule = Number(day.rule || 1);
+    const requiredRule = fromDay && day.day >= fromDay ? 2 : 1;
+    check(
+      declaredRule === requiredRule,
+      `${day.day}: sealed under the signature rule its date requires`,
+      `the seal declares rule ${declaredRule}, and farm-bound signatures begin ` +
+        `${fromDay || "never"}, so this day must be rule ${requiredRule}`
     );
     if (expectedPrev === null) {
       if (day.prev_seal === genesis) {
@@ -601,10 +643,18 @@ async function verifyStatement() {
   // 4. Signatures. Ed25519 verification needs a library this page does not load,
   //    so say so rather than implying a check that did not happen.
   const device = statement.device || {};
+  if (!statement.signature) {
+    note(
+      "This statement is not signed as a whole (HashGuard before 2.1): the seals are signed, " +
+        "but the totals and proofs around them are not."
+    );
+  }
   if (device.verifiable_by_third_party) {
     note(
-      `Seals are ed25519-signed by device ${device.device_id}. This page checks structure and ` +
-        "arithmetic; run tools/hashguard_verify.py to also check the signatures."
+      `Seals are ed25519-signed by device ${device.device_id}` +
+        (farmId ? ` for farm ${farmId.slice(0, 16)}…` : "") +
+        ". This page checks structure and arithmetic; run tools/hashguard_verify.py to also " +
+        "check the signatures."
     );
   } else {
     note(
@@ -636,7 +686,7 @@ async function verifyStatement() {
   }
 }
 
-/* ───────────────────────── calibration ───────────────────── */
+/* ────────────────────── calibration ───────────────── */
 
 const CAL_FIELDS = [
   {
@@ -757,7 +807,7 @@ async function saveCalibration() {
   }
 }
 
-/* ───────────────────────── wiring ────────────────────────── */
+/* ────────────────────── wiring ─────────────────────── */
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnConnection").addEventListener("click", openSettings);
