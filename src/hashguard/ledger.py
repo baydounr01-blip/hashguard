@@ -29,6 +29,12 @@ Three layers of protection, each answering a different attack:
    From the activation day the message carries the farm id; see
    :mod:`hashguard.rules` for the rule and why it is written down rather than
    switched on.
+5. **Commit before the evidence** (new in v2.1) -- catches a decision written
+   to fit a measurement. Each record carries the commitment of the decision
+   that governs the interval it opens, and the next record reveals it; see
+   :mod:`hashguard.commit`. Without it, a farm dark for an unrelated reason
+   could be claimed as a pause after the fact, and the corroboration cap would
+   wave it through.
 
 Nothing here trusts the operator, and nothing here trusts the client. That is
 the point: the arrangement is *checkable*, so neither party has to be trusted.
@@ -39,9 +45,10 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from .attest import DEFAULT_MARGIN_PPM, Claim, SavingsAuditor
+from .commit import REVEALED, reveal_state, tally
 from .canonical import (
     SPEC,
     CanonicalError,
@@ -80,6 +87,11 @@ RECORD_FIELDS = (
     "spec", "seq", "day", "ts", "prev", "device_id", "action", "executed",
     "n_miners", "seconds", "price_ppm_per_kwh", "breakeven_ppm_per_kwh",
     "claimed_wh", "claimed_mining_lost_micro_eur", "baseline_gh", "observed_gh",
+    # New in v2.1, see :mod:`hashguard.commit`. A record describes the interval
+    # that just closed (``opened`` .. ``ts``) and carries the ``commit`` of the
+    # one that just opened, so a decision is on disk before the telemetry that
+    # corroborates it is read.
+    "opened", "commit", "reveal", "price_curve_hash",
 )
 
 
@@ -133,6 +145,14 @@ class Interval:
     claimed_mining_lost_micro_eur: int
     baseline_gh: int | None
     observed_gh: int | None
+
+    # -- commit/reveal (v2.1). Defaults keep every v2.0.0 construction of this
+    # dataclass working; a record written without them is simply *legacy*, and
+    # the ledger says so rather than pretending it was committed.
+    opened: str | None = None            # when the interval described here began
+    commit: str | None = None            # commitment for the interval opening now
+    reveal: dict | None = None           # {"commit_seq": int, "nonce": hex} for this one
+    price_curve_hash: str | None = None  # digest of the curve the decision came from
 
 
 class GuardedLedger:
@@ -272,6 +292,13 @@ class GuardedLedger:
             "claimed_mining_lost_micro_eur": int(interval.claimed_mining_lost_micro_eur),
             "baseline_gh": None if interval.baseline_gh is None else int(interval.baseline_gh),
             "observed_gh": None if interval.observed_gh is None else int(interval.observed_gh),
+            "opened": interval.opened or None,
+            "commit": interval.commit,
+            "reveal": None if interval.reveal is None else {
+                "commit_seq": int(interval.reveal["commit_seq"]),
+                "nonce": str(interval.reveal["nonce"]),
+            },
+            "price_curve_hash": interval.price_curve_hash,
         }
         canonical_bytes(record)  # refuses to store anything it cannot hash
         _append_line(os.path.join(self.records_dir, f"{record['day']}.jsonl"), record)
@@ -281,8 +308,30 @@ class GuardedLedger:
 
     # -- reading ---------------------------------------------------------
 
+    @property
+    def next_seq(self) -> int:
+        """The sequence number the next record will carry. A reveal names its
+        predecessor by seq, and the predecessor is always ``next_seq - 1``."""
+        return self._seq
+
     def day_records(self, day: str) -> list[dict]:
         return _read_lines(os.path.join(self.records_dir, f"{day}.jsonl"))
+
+    def record_before(self, day: str) -> dict | None:
+        """The record immediately preceding this day's first one.
+
+        The first record of a day reveals a commitment written in the last
+        record of the day before, which lives in another file. A reader that
+        does not cross that boundary would call one interval a day unrevealed
+        for no reason -- and, since billing fails closed, would silently stop
+        billing it.
+        """
+        try:
+            previous = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+        except ValueError:
+            return None
+        records = self.day_records(previous)
+        return records[-1] if records else None
 
     def days(self) -> list[str]:
         return sorted(
@@ -368,13 +417,25 @@ class GuardedLedger:
         advisory_micro = 0
         proof_targets: list[tuple[str, int]] = []
 
+        uncommitted_claims = 0
+        states_by_month: list[str] = []
+
         for seal in self.seals():
             if not seal["day"].startswith(month):
                 continue
             records = self.day_records(seal["day"])
+            # From the activation day a claim has to have been committed before
+            # the interval it describes ran. Before it, records predate the rule
+            # and bill exactly as v2.0.0 billed them.
+            require_reveal = self.rule_for(seal["day"]) == SEAL_RULE_FARM_BOUND
+            previous = self.record_before(seal["day"])
+            day_states: list[str] = []
             day_billable = 0
             day_gross = 0
             for index, r in enumerate(records):
+                state = reveal_state(r, previous)
+                day_states.append(state)
+                previous = r
                 if r["action"] != "PAUSE":
                     continue
                 claimed_energy = energy_cost_micro_eur(r["claimed_wh"], r["price_ppm_per_kwh"])
@@ -383,6 +444,12 @@ class GuardedLedger:
                     advisory_micro += claimed_net
                     continue
                 day_gross += claimed_net
+                if require_reveal and state != REVEALED:
+                    # Measured, shown, and not billed: a claim whose decision
+                    # cannot be shown to predate its own corroboration is our
+                    # problem, not the client's.
+                    uncommitted_claims += 1
+                    continue
                 claim = Claim(r["seq"], r["claimed_wh"], r["baseline_gh"], r["observed_gh"])
                 billable_wh = auditor.submit(claim)
                 if billable_wh <= 0:
@@ -397,9 +464,11 @@ class GuardedLedger:
                     proof_targets.append((seal["day"], index))
             gross_micro += day_gross
             billable_micro += day_billable
+            states_by_month.extend(day_states)
             days.append(
                 {
                     "day": seal["day"],
+                    "commit_reveal": tally(day_states),
                     "seal_hash": seal["seal_hash"],
                     "prev_seal": seal["prev_seal"],
                     "merkle_root": seal["merkle_root"],
@@ -437,6 +506,10 @@ class GuardedLedger:
             "margin_ppm": self.margin_ppm,
             "days": days,
             "corroboration": auditor.report(),
+            "commit_reveal": {
+                **tally(states_by_month),
+                "pause_claims_not_billed_for_lack_of_a_reveal": uncommitted_claims,
+            },
             "totals": {
                 "gross_net_saving_micro_eur": gross_micro,
                 "billable_net_saving_micro_eur": billable_micro,
