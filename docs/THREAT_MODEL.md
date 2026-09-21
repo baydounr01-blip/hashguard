@@ -110,6 +110,16 @@ to be trusted.
 - The token lives in `sessionStorage`, not `localStorage`.
 - Verification runs client-side, so a compromised operator backend cannot make
   a bad statement look good in the client's own browser.
+- **The browser's encoder and the agent's are held to the same pinned bytes.**
+  Client-side verification is worth nothing if the two implementations disagree
+  about one character: the farm would sign a statement the client could never
+  check, and neither side would know why. CI hashes a corpus of awkward values
+  in Python and in Node — running `web/canonical.js` itself — and requires
+  agreement with each other and with a pin.
+  *Tests: `test_parity.py::test_python_and_node_hash_the_corpus_identically`,
+  `::test_the_pinned_digests_have_not_moved`,
+  `::test_keys_sort_by_code_point_on_both_sides`,
+  `::test_node_refuses_the_same_things`.*
 
 ## Explicitly out of scope
 

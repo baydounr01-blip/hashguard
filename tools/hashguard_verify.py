@@ -204,22 +204,38 @@ def sha256d(data: bytes) -> bytes:
     return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 
+#: The largest integer JavaScript and Python still agree about. A ledger is
+#: meant to be checkable in a browser, so a value past this point is one the
+#: two readers would hash differently -- and it is refused here as it is in the
+#: agent, rather than hashed into a digest only one of them can reproduce.
+MAX_SAFE_INT = 2**53 - 1
+
+
 def canonical(value) -> bytes:
-    _reject_floats(value)
+    _reject_unhashable(value)
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     ).encode("utf-8")
 
 
-def _reject_floats(value, path="$"):
+def _reject_unhashable(value, path="$"):
     if isinstance(value, float):
         raise ValueError(f"{path}: the canonical form admits no floats")
+    if isinstance(value, bool):
+        return
+    if isinstance(value, int):
+        if value > MAX_SAFE_INT or value < -MAX_SAFE_INT:
+            raise ValueError(
+                f"{path}: {value} is outside ±(2**53 - 1); JavaScript cannot tell it "
+                "from its neighbour, so it has no single canonical reading"
+            )
+        return
     if isinstance(value, list):
         for i, v in enumerate(value):
-            _reject_floats(v, f"{path}[{i}]")
+            _reject_unhashable(v, f"{path}[{i}]")
     elif isinstance(value, dict):
         for k, v in value.items():
-            _reject_floats(v, f"{path}.{k}")
+            _reject_unhashable(v, f"{path}.{k}")
 
 
 def tagged(tag: str, data: bytes) -> bytes:

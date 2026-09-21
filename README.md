@@ -165,6 +165,32 @@ differently. The fee is integer arithmetic with a stated rounding rule, and it
 rounds *down*, so every fraction of a micro-euro that rounding creates goes to
 the client.
 
+It also refuses any integer outside ±(2⁵³ − 1). That bound is about the browser,
+not the physics: JavaScript reads `9007199254740993` as `9007199254740992`, so a
+record holding such a value would hash differently in the console and the client
+could never verify their own invoice. The bound sits four orders of magnitude
+above anything a farm produces — 2⁵³ watt-hours is 9 PWh — so nothing real
+reaches it, and a value that does is a bug worth failing on.
+
+### Two encoders, kept in step
+
+`hashguard/canonical.py` and `web/canonical.js` are two implementations of one
+encoding, and that is deliberate: the console verifies the invoice using none
+of the operator's code, which means nothing unless both produce the same bytes.
+It is also a standing liability, so CI pins it down. `tests/vectors/canonical.json`
+holds, for sixteen awkward values, the exact bytes and the exact digest they
+must produce; the `parity` job hashes every one in Python and in Node — running
+`web/canonical.js` itself, the same file the browser loads — and requires the
+two to agree with each other *and* with the pin. Agreeing with each other alone
+would pass on the day both change the same wrong way.
+
+The corpus is chosen for the places the two languages part company: keys that
+look numeric (`"10"` sorts before `"9"`), every JSON escape, the characters that
+are *not* escaped (DEL, U+2028), and the code-point trap — `Array.prototype.sort`
+compares UTF-16 code units, so a default sort puts an emoji key before a
+private-use one and Python does not. Same content, two Merkle roots. The console
+sorts by code point.
+
 ---
 
 ## Security
@@ -319,6 +345,8 @@ src/hashguard/
 tools/hashguard_verify.py   the independent verifier (imports no HashGuard)
 tools/package_digest.py     the digest line a release publishes
 tools/compat/roundtrip.sh   the published version and this one, over one ledger
+tools/canonical_vectors.py  the pinned corpus the two encoders are held to
+web/canonical.js            the encoding and the hashes, shared by page and test
 web/                        console (strict CSP, in-browser verification)
 docs/AUDIT_v1.md            every v1 finding and its fix
 docs/THREAT_MODEL.md        what this defends against, and what it does not

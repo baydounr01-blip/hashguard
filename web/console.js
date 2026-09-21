@@ -35,63 +35,24 @@ const calState = {};
 
 /* ────────────────────── crypto ─────────────────────── */
 
-async function sha256(bytes) {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-}
-
-async function sha256d(bytes) {
-  return sha256(await sha256(bytes));
-}
-
-function concat(a, b) {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
-
-function toHex(bytes) {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function fromHex(text) {
-  if (typeof text !== "string" || text.length !== 64 || !/^[0-9a-f]+$/.test(text)) return null;
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) out[i] = parseInt(text.substr(i * 2, 2), 16);
-  return out;
-}
-
-/* The canonical encoding, matching hashguard/canonical.py exactly: keys sorted,
-   no insignificant whitespace, UTF-8, and no floats anywhere. */
-function canonical(value) {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number") {
-    if (!Number.isInteger(value)) throw new Error("the canonical form admits no floats");
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-  if (typeof value === "object") {
-    const keys = Object.keys(value).sort();
-    return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
-  }
-  throw new Error("value has no canonical encoding");
-}
-
-const encoder = new TextEncoder();
-
-async function taggedHash(tag, bytes) {
-  return sha256d(concat(await sha256(encoder.encode(tag)), bytes));
-}
-
-async function recordHash(record) {
-  return taggedHash(SPEC + "/record", encoder.encode(canonical(record)));
-}
-
-async function nodeHash(left, right) {
-  return taggedHash(SPEC + "/node", concat(left, right));
-}
+/* The encoding and the hashes live in canonical.js, loaded by console.html
+   before this file. They are shared with tools/canonical_parity_node.js, which
+   runs the *same file* under Node and requires it to produce byte-for-byte the
+   same output as hashguard/canonical.py for a pinned corpus. Two
+   implementations of one encoding is a risk worth taking only while something
+   keeps proving they agree. */
+const {
+  canonical,
+  concat,
+  encoder,
+  fromHex,
+  nodeHash,
+  recordHash,
+  sha256,
+  sha256d,
+  taggedHash,
+  toHex,
+} = window.HashGuardCanonical;
 
 async function verifyInclusion(leaf, proof, root) {
   if (!leaf || !root) return false;

@@ -62,6 +62,30 @@ jobs:
           test -s ledger/records/*.jsonl
           echo "Degraded cleanly to HMAC and said so."
 
+  parity:
+    name: "the two canonical encoders, byte for byte"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -e ".[test]"
+      - name: Python and Node must agree with each other and with the pins
+        run: pytest tests/test_parity.py -v
+      - name: The corpus must be exactly what the generator produces
+        run: |
+          set -e
+          # A pin edited by hand is a pin that agrees with whatever it was
+          # edited to match. Regenerating it must be a no-op.
+          python3 tools/canonical_vectors.py --print > /tmp/regenerated.json
+          diff -u tests/vectors/canonical.json /tmp/regenerated.json \
+            || { echo "tests/vectors/canonical.json is not what tools/canonical_vectors.py builds"; exit 1; }
+          echo "the pins are exactly what the generator produces."
+
   compat:
     name: "the published version and this one, over one ledger"
     runs-on: ubuntu-latest

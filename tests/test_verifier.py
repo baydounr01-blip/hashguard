@@ -80,6 +80,24 @@ def test_the_verifier_refuses_floats_too(verifier):
         verifier.canonical({"eur": 1.5})
 
 
+def test_the_verifier_refuses_unsafe_integers_too(verifier):
+    """Third implementation, same bound. A statement holding an integer past
+    2^53 has no single reading -- the browser would hash it as its neighbour --
+    so the file that exists to settle disputes must not settle one on it."""
+    from hashguard.canonical import MAX_SAFE_INT
+
+    assert verifier.MAX_SAFE_INT == MAX_SAFE_INT == 2**53 - 1
+    verifier.canonical({"wh": MAX_SAFE_INT})          # the bound itself is fine
+    for value in (2**53, -(2**53), 2**70):
+        with pytest.raises(ValueError):
+            verifier.canonical({"wh": value})
+    with pytest.raises(ValueError):
+        verifier.canonical({"a": {"b": [1, 2**53 + 1]}})
+    # Booleans are ints in Python. Refusing True as "out of range" would be a
+    # very silly way to break every record in the ledger.
+    assert verifier.canonical({"executed": True}) == b'{"executed":true}'
+
+
 def test_the_commitment_hash_agrees(verifier):
     """The second reimplementation that has to stay in step with the package:
     a verifier that computed commitments differently would call every honest
