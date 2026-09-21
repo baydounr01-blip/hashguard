@@ -209,7 +209,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  curtailment  {config['curtailment']['mode']}")
     print(f"  break-even   {state.curtailment.breakeven_ppm() / 1e6:.4f} EUR/kWh")
     print(f"  device       {identity.device_id}  ({identity.algorithm})")
+    print(f"  farm id      {identity.farm_id or 'none (pre-2.1 key file)'}")
     print(f"  ledger       {config['paths']['ledger_dir']}/")
+    if state.ledger.activated_from:
+        print(f"  seals        name this farm from {state.ledger.activated_from} onward")
+    else:
+        print("  seals        name no farm: signatures are not bound to this installation")
     if identity.algorithm != "ed25519":
         print("  note         seals are HMAC-signed; install 'cryptography' for third-party auditable ed25519")
     if not api.get("cors_origins"):
