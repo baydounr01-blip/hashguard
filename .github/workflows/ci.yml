@@ -62,6 +62,21 @@ jobs:
           test -s ledger/records/*.jsonl
           echo "Degraded cleanly to HMAC and said so."
 
+  compat:
+    name: "the published version and this one, over one ledger"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The round trip checks out the published version as a second git
+          # worktree, so the whole history has to be here.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Round trip against v2.0.0
+        run: bash tools/compat/roundtrip.sh
+
   self-audit:
     name: "the v1 findings, replayed against a running agent"
     runs-on: ubuntu-latest

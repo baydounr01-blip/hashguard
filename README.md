@@ -210,6 +210,28 @@ It never touches a relay, seals nothing, writes nothing to the ledger, and reads
 no miner. Its one outbound request is the digest lookup, through the same guard
 a price feed gets. Nothing it does can stop mining or change a bill.
 
+### Upgrades, checked against the version you already have
+
+A format is not what a specification says. It is what the released code
+actually writes and actually accepts. `tools/compat/roundtrip.sh` installs the
+published version and the working tree in two environments and makes them pass
+one ledger back and forth: the old version writes and seals a month, the new
+one verifies it, opens it, activates farm-bound signatures from a later day,
+appends its own days and states them — and then the *old* version verifies what
+the new one wrote.
+
+The assertion that matters is the last one. The old version must keep working
+and fail on exactly one thing: the signature of the days sealed under the new
+rule. Chain, Merkle roots, seal hashes and inclusion proofs all still have to
+pass, on records carrying fields it has never heard of. An old version that
+falls over on a new ledger, or one that accepts a day it cannot actually check,
+both fail the job. It runs in CI on every push.
+
+Writing this found a real defect: the verifier used to fail a pre-2.1 statement
+for "not being for the farm whose key you were given" when that statement names
+no farm at all. It is a NOTE now — *Test:
+`test_verifier.py::test_an_old_statement_and_an_upgraded_key_is_a_note_not_a_failure`.*
+
 Highlights of the posture:
 
 | | |
@@ -296,6 +318,7 @@ src/hashguard/
 
 tools/hashguard_verify.py   the independent verifier (imports no HashGuard)
 tools/package_digest.py     the digest line a release publishes
+tools/compat/roundtrip.sh   the published version and this one, over one ledger
 web/                        console (strict CSP, in-browser verification)
 docs/AUDIT_v1.md            every v1 finding and its fix
 docs/THREAT_MODEL.md        what this defends against, and what it does not

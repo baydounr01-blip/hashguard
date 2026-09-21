@@ -368,6 +368,37 @@ def test_a_statement_for_another_farm_is_refused(tmp_path, verifier, monkeypatch
     assert "for the farm whose key you were given" in capsys.readouterr().out
 
 
+def test_an_old_statement_and_an_upgraded_key_is_a_note_not_a_failure(
+    tmp_path, verifier, monkeypatch, capsys
+):
+    """The ordinary shape of an upgrade, found by tools/compat/roundtrip.sh.
+
+    The farm upgrades, its key file gains a farm id, and the client re-checks
+    an invoice from before the upgrade with the fresh ``device_public.json``
+    they were sent. The statement names no farm; the key does. That is not a
+    mismatch -- the statement makes no claim to disagree with -- and failing it
+    would teach the client that a red line on an old invoice is normal, which
+    is how a verifier stops being read.
+    """
+    identity, ledger = build_month(tmp_path)
+    statement = ledger.statement(months_of(ledger)[0])
+    for key in ("farm_id", "activation", "signature", "algorithm", "commit_reveal"):
+        statement.pop(key, None)
+    for day in statement["days"]:
+        day.pop("rule", None)
+    statement["device"].pop("farm_id", None)
+
+    # The key file the client holds today: same device, now naming its farm.
+    public = dict(identity.public())
+    assert public["farm_id"], "the fixture key must carry a farm id for this to mean anything"
+
+    statement_path, key_path = write_docs(tmp_path, statement, public)
+    assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) == 0
+    output = capsys.readouterr().out
+    assert "this statement names no farm at all" in output
+    assert "for the farm whose key you were given" not in failures_in(output)
+
+
 def test_the_statement_signature_is_checked(tmp_path, verifier, monkeypatch, capsys):
     """A field the arithmetic checks would not notice, changed after signing."""
     identity, ledger = build_month(tmp_path)

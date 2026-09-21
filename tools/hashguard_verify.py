@@ -405,11 +405,24 @@ def main() -> int:
                     report.check(verdict, "the activation entry is signed by the device key")
             print(f"  farm {farm_id}")
             print(f"  seals name this farm from {from_day} onward; days before it are signed as v2.0.0 signed them")
-    if args.pubkey and public.get("farm_id"):
+    if args.pubkey and public.get("farm_id") and farm_id:
         report.check(
             public["farm_id"] == farm_id,
             "this statement is for the farm whose key you were given",
             f"the key names {str(public.get('farm_id'))[:16]}..., the statement names {str(farm_id)[:16]}...",
+        )
+    elif args.pubkey and public.get("farm_id"):
+        # The key names a farm and the statement names none. That is what a
+        # pre-2.1 statement looks like once the farm has upgraded, and it is
+        # not a mismatch: the statement makes no claim about which farm it is
+        # for, so there is nothing here to disagree with. Failing it would
+        # teach an operator that a red line is normal, which is how a verifier
+        # stops being read. Say what is missing instead.
+        report.note(
+            f"the key you were given names farm {str(public.get('farm_id'))[:16]}..., and this "
+            "statement names no farm at all. It predates farm binding, so it cannot be tied to "
+            "that key beyond the signature itself -- which any ledger signed by this device "
+            "would also satisfy."
         )
     elif args.pubkey and activation:
         report.note(
