@@ -39,6 +39,24 @@ to be trusted.
 - **Fabricating history is detectable.** Seals are signed by a device key. An
   attacker who rewrites records *and* recomputes the Merkle root still cannot
   produce a valid signature without the key.
+- **A seal cannot be moved between farms.** Every installation mints a
+  `farm_id`: 32 random bytes, public, stored beside the device key and printed
+  at startup. From the activation day written into `ledger/activation.json`,
+  the farm id is *inside* the bytes a seal signature covers, so one key file
+  installed on two farms no longer produces interchangeable seals. Which rule
+  governs a day is a pure function of the day and the activation day, so a day
+  never has two valid readings, and a day already sealed can never have its
+  rule changed by a later activation.
+  *Tests: `test_rules.py::test_a_seal_signed_for_farm_a_does_not_verify_as_farm_b`,
+  `test_ledger.py::test_a_ledger_crossing_the_activation_date_seals_each_day_under_exactly_one_rule`,
+  `::test_activation_cannot_rewrite_the_rule_of_a_sealed_day`.*
+- **The invoice document is signed, not just the seals inside it.** v2.0.0
+  signed each day's seal but nothing around it, so the totals, the fee and the
+  inclusion proofs a client was handed could be re-typed in transit while every
+  seal still verified. The statement now carries its own signature over
+  everything except its presentational fields.
+  *Test: `test_ledger.py::test_the_statement_is_signed_over_its_own_totals`,
+  `test_verifier.py::test_the_statement_signature_is_checked`.*
 - **A single line is checkable in isolation.** Inclusion proofs mean verifying
   one invoice line needs a 32-byte root and ~15 hashes, not the whole month.
 - **The arithmetic is reproducible.** Integers in declared minor units, and a
@@ -109,6 +127,16 @@ useful than implying otherwise.
   rotation ceremony. Rotating it today means the seals before and after are
   signed by different keys, and a verifier must be given both. This should be a
   first-class operation and is not yet.
+- **A key file copied *after* activation carries the farm id with it.** Farm
+  binding stops a seal being presented as another farm's; it does not stop
+  someone duplicating a whole installation. What the client gets is a visible
+  symptom rather than a silent one: the same farm id and the same device
+  fingerprint appearing on two farms. Comparing that fingerprint out of band,
+  once, is what makes it a symptom at all.
+- **Days sealed before the activation day stay in the old format.** They must:
+  re-signing them would mean rewriting signed history, which is the one thing
+  this design exists to prevent. A ledger that predates HashGuard 2.1
+  therefore has a prefix of seals that name no farm, and the verifier says so.
 - **Price feed integrity beyond TLS.** A feed that is authentic but wrong
   produces authentic, wrong decisions. The price used is sealed into the record,
   so the error is at least *attributable* after the fact.

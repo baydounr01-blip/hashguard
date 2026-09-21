@@ -19,8 +19,8 @@ credit in the advisory and in the changelog unless you would rather not have one
   surface, the outbound request guard, and anything reachable from a miner's
   socket.
 - The ledger and its verification (`ledger.py`, `merkle.py`, `canonical.py`,
-  `attest.py`, `tools/hashguard_verify.py`) — in particular any way to make a
-  tampered ledger verify, or an honest one fail.
+  `attest.py`, `rules.py`, `tools/hashguard_verify.py`) — in particular any way
+  to make a tampered ledger verify, or an honest one fail.
 - The console (`web/`) — anything that gets script execution, exfiltrates the
   token, or makes an invalid statement display as valid.
 
@@ -54,13 +54,20 @@ precisely what they are running.
 3. **Back up `device_key.json`, and keep it `0600`.** Lose it and past seals stay
    verifiable but no new ones can be signed by that identity. Leak it and anyone
    can mint seals in your farm's name.
-4. **List your console's exact origin** in `api.cors_origins` if you serve the
+4. **Write down the farm id the agent prints at startup, and compare it once,
+   out of band.** It is public material — 32 bytes of hex, stored beside the
+   device key — and from the activation day recorded in
+   `ledger/activation.json` it is inside every signed seal. Comparing it once
+   is what turns "a seal signed by some HashGuard installation" into "a seal
+   signed by *this* farm". The verifier checks it for you when the
+   `device_public.json` you were given carries one.
+5. **List your console's exact origin** in `api.cors_origins` if you serve the
    console from anywhere other than the agent's own machine. `*` is refused.
-5. **Keep `curtailment.mode` on `advisory`** until you have watched the decisions
+6. **Keep `curtailment.mode` on `advisory`** until you have watched the decisions
    for a while. Advisory mode never touches a relay and never bills anything.
-6. **List relay hosts explicitly** in `curtailment.webhook_allowlist`. The agent
+7. **List relay hosts explicitly** in `curtailment.webhook_allowlist`. The agent
    will not call a host nobody listed, and will not call a public address at all.
-7. **Verify your first statement by hand**, with `tools/hashguard_verify.py`. If
+8. **Verify your first statement by hand**, with `tools/hashguard_verify.py`. If
    the checking mechanism only ever gets used by the party that wrote it, it is
    decoration.
 
