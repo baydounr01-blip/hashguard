@@ -66,6 +66,23 @@ so* — in the startup banner, in the statement, and in the console — because 
 HMAC seal is only checkable by someone who could also forge one, and that
 difference should never be papered over.
 
+A signature says *who* sealed. It did not, until v2.1, say *which farm* the
+seal was for: the signed bytes named no farm, so one key file installed twice
+produced seals that were interchangeable between two sites. Each installation
+now mints a public `farm_id`, and from an activation day written into the
+ledger that id is inside the signed message — with the rule for any given day
+a pure function of the day and that activation day, so a day never has two
+valid readings and a day already sealed can never be re-signed under a
+different rule. The change is carried over from the first consensus change of
+[RAMI-Chain](https://github.com/baydounr01-blip/RAMI-Ledger), where the same
+hole (a testnet transaction valid byte for byte on another network) was closed
+the same way: put the network inside the signature, switch it on by date, and
+publish what the old version will and will not still understand.
+
+The statement is signed too, from v2.1. Signing the seals and not the document
+around them left the totals, the fee and the proofs a client is handed
+unattested — every seal would still verify after someone re-typed them.
+
 ### 4. A pause has to be visible in the physics — corroboration
 
 This is the part we think is genuinely new.
@@ -126,8 +143,13 @@ records, and report exactly where the arithmetic stops agreeing.
 It checks that the records chain, that none are missing, that each day's records
 reproduce the sealed root, that `seal_hash = SHA256d(prev_seal ‖ merkle_root)`,
 that the seals chain day to day, that every inclusion proof validates, that the
-signatures verify, and that the money adds up — including that no line bills
-more energy than the telemetry witnessed.
+signatures verify, that each day is sealed under exactly the signature rule its
+date requires, that the statement itself is signed, and that the money adds up —
+including that no line bills more energy than the telemetry witnessed.
+
+When it is handed a statement from before v2.1 it still passes it, and says
+which of those checks it could not make. A comparison that could not be made is
+not a comparison that passed.
 
 The console does a subset of the same work **in your browser**, with WebCrypto,
 using none of the operator's code. That is possible only because the ledger
@@ -169,6 +191,7 @@ Highlights of the posture:
 | **Outbound** | price feeds must be HTTPS to a public address; relays must be allowlisted *and* private. Both DNS-pinned, no redirects, size-capped |
 | **Input** | every read bounded — request bodies, miner sockets, price responses, board counts |
 | **Secrets** | key and config files created `0600`; a loosened key file is refused, not warned about |
+| **Signatures** | bound to the farm from an activation day written into the ledger; the statement signed as a document, not only the seals inside it |
 | **Console** | strict CSP, no `innerHTML` from agent data, token in `sessionStorage` |
 | **Dependencies** | none. `cryptography` is optional, for ed25519 |
 
@@ -223,9 +246,10 @@ Closed-loop it settles at 2.02σ against an ideal of 2.045.
 src/hashguard/
   canonical.py   the one encoding both parties hash; refuses floats
   merkle.py      Merkle roots, inclusion proofs, the bbu-style seal header
+  rules.py       which signature rule governs a day, and what each one signs
   ledger.py      append-only records, daily seals, the monthly statement
   attest.py      the corroboration auditor (ported from bbu.signature, P12)
-  identity.py    ed25519 / HMAC device keys, 0600 and checked
+  identity.py    ed25519 / HMAC device keys, the farm id, 0600 and checked
   money.py       integer units and the fee arithmetic
   qtmp.py        the detection engine
   adaptive.py    the feedback controller
@@ -241,11 +265,12 @@ tools/hashguard_verify.py   the independent verifier (imports no HashGuard)
 web/                        console (strict CSP, in-browser verification)
 docs/AUDIT_v1.md            every v1 finding and its fix
 docs/THREAT_MODEL.md        what this defends against, and what it does not
+docs/PLAN_v2.1.md           what is being ported from RAMI-Chain, and how
 ```
 
 ## Where this comes from
 
-Three repositories of the same author, joined here:
+Four repositories of the same author, joined here:
 
 - **[universal-timeline](https://github.com/baydounr01-blip/universal-timeline)** —
   the Universo de Bloques Ramificados. `bbu.merkle` supplies the SHA-256d
@@ -254,6 +279,13 @@ Three repositories of the same author, joined here:
   computed, not declared* — is the one this repository is built on.
 - **[quantumbot547](https://github.com/baydounr01-blip/quantumbot547)** — the
   QTMP engine and the progressive access limiter behind `ratelimit.py`.
+- **[RAMI-Chain](https://github.com/baydounr01-blip/RAMI-Ledger)** — a Rust
+  blockchain with a desktop wallet, and the source of the disciplines v2.1 is
+  built on: a signature bound to its network, activated by a date that is
+  written down rather than switched on; commit/reveal against look-ahead; a
+  wallet that attacks its own node and reports what it could not check; and a
+  round trip run against the *real* published binaries, because the format that
+  matters is the one they actually write.
 - **hashguard v1** — the product, the fail-safe curtailment design, and the
   sibling-comparison engine. All of it survives into v2; see the closing section
   of `docs/AUDIT_v1.md` for what it got right.
