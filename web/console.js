@@ -16,6 +16,9 @@
  *    with WebCrypto, using none of the operator's code. That works only because
  *    the ledger contains no floating point: integers and strings serialise
  *    identically in Python and JavaScript, so both sides hash the same bytes.
+ *
+ * Where it cannot check something -- an ed25519 signature, or a commitment it
+ * would need the raw records for -- it says so and names what does.
  */
 
 "use strict";
@@ -640,7 +643,34 @@ async function verifyStatement() {
     );
   }
 
-  // 4. Signatures. Ed25519 verification needs a library this page does not load,
+  // 4. Commitments. A claim is only worth something if the decision behind it
+  //    was fixed before the telemetry that corroborates it was read. This page
+  //    holds the statement, not the raw records, so it reports what the
+  //    statement declares and names what actually checks it -- rather than
+  //    dressing a self-report up as a verification.
+  const commitReveal = statement.commit_reveal;
+  if (!commitReveal) {
+    note(
+      "These records predate commit/reveal: nothing in them shows that a decision was fixed " +
+        "before the telemetry that corroborates it was read."
+    );
+  } else {
+    note(
+      `The statement reports ${commitReveal.revealed || 0} interval(s) whose decision was ` +
+        `committed before it ran, ${commitReveal.unrevealed || 0} unrevealed (restarts and day ` +
+        `boundaries) and ${commitReveal.mismatched || 0} mismatched. Recomputing those ` +
+        "commitments needs the raw records: run tools/hashguard_verify.py."
+    );
+    const notBilled = Number(commitReveal.pause_claims_not_billed_for_lack_of_a_reveal || 0);
+    if (notBilled) {
+      note(
+        `${notBilled} claimed pause(s) were measured but not billed, because the decision ` +
+          "behind them cannot be shown to predate the telemetry. That is the operator's loss."
+      );
+    }
+  }
+
+  // 5. Signatures. Ed25519 verification needs a library this page does not load,
   //    so say so rather than implying a check that did not happen.
   const device = statement.device || {};
   if (!statement.signature) {
