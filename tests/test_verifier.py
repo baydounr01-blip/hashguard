@@ -9,7 +9,7 @@ implementations to each other on generated data.
 import importlib.util
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -83,9 +83,11 @@ def test_the_verifier_refuses_floats_too(verifier):
 # -- end to end ------------------------------------------------------------
 
 
-def build_month(tmp_path, honest=True):
+def build_month(tmp_path, honest=True, activate_from=None):
     identity = DeviceIdentity.generate()
-    ledger = GuardedLedger(identity, base_dir=str(tmp_path / "ledger"))
+    ledger = GuardedLedger(
+        identity, base_dir=str(tmp_path / "ledger"), activate_from=activate_from
+    )
     for back in (3, 2, 1):
         day = datetime.now(timezone.utc) - timedelta(days=back)
         for slot in range(48):
@@ -171,8 +173,6 @@ def test_a_later_month_verifies_even_though_it_does_not_start_at_genesis(
     """Regression: only the very first statement a farm ever produces begins at
     the genesis seal. Every later month opens with a day chaining to a seal from
     the month before -- a real link, but not one this document can check."""
-    from datetime import date
-
     today = date.today()
     first_this_month = today.replace(day=1)
     last_prev = first_this_month - timedelta(days=1)
@@ -251,3 +251,111 @@ def test_missing_records_fail_the_verifier(tmp_path, verifier, monkeypatch):
     empty = tmp_path / "no_records"
     empty.mkdir()
     assert run_verifier(verifier, monkeypatch, statement_path, str(empty), key_path) != 0
+
+
+# -- the signature rule, seen from outside the package ---------------------
+
+
+def write_docs(tmp_path, statement, public):
+    statement_path = tmp_path / "statement.json"
+    key_path = tmp_path / "device_public.json"
+    statement_path.write_text(json.dumps(statement, indent=2))
+    key_path.write_text(json.dumps(public, indent=2))
+    return str(statement_path), str(key_path)
+
+
+def activated_statement(ledger, activate):
+    """The month that actually straddles or follows the activation day."""
+    for month in months_of(ledger):
+        statement = ledger.statement(month)
+        if any(day["day"] >= activate for day in statement["days"]):
+            return statement
+    raise AssertionError("no sealed month carries a day on or after the activation day")
+
+
+def test_a_v2_0_0_statement_verifies_unchanged(tmp_path, verifier, monkeypatch, capsys):
+    """The compatibility promise: a statement written before this version
+    still passes, and the two checks that cannot be made are reported as not
+    made rather than quietly skipped."""
+    identity, ledger = build_month(tmp_path)
+    statement = ledger.statement(months_of(ledger)[0])
+    for key in ("farm_id", "activation", "signature", "algorithm"):
+        statement.pop(key, None)
+    for day in statement["days"]:
+        day.pop("rule", None)
+    statement["device"].pop("farm_id", None)
+    public = {k: v for k, v in identity.public().items() if k != "farm_id"}
+
+    statement_path, key_path = write_docs(tmp_path, statement, public)
+    assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) == 0
+    output = capsys.readouterr().out
+    assert "predates farm-bound signatures" in output
+    assert "not signed as a whole" in output
+
+
+def test_a_rule_1_seal_after_activation_is_refused(tmp_path, verifier, monkeypatch, capsys):
+    """Going back to the format that names no farm is how the whole change
+    would be undone. The date decides, not the seal."""
+    activate = (date.today() - timedelta(days=2)).isoformat()
+    identity, ledger = build_month(tmp_path, activate_from=activate)
+    statement = activated_statement(ledger, activate)
+    target = next(day for day in statement["days"] if day["day"] >= activate)
+    target["rule"] = 1
+
+    statement_path, key_path = write_docs(tmp_path, statement, identity.public())
+    assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) != 0
+    output = capsys.readouterr().out
+    assert f"{target['day']}: sealed under the signature rule its date requires" in output
+
+
+def test_a_rule_2_seal_before_activation_is_refused(tmp_path, verifier, monkeypatch, capsys):
+    """And the mirror image, so that no day can be read under either rule."""
+    activate = (date.today() - timedelta(days=2)).isoformat()
+    identity, ledger = build_month(tmp_path, activate_from=activate)
+    statement = activated_statement(ledger, activate)
+    moved = "2099-01-01"
+    statement["activation"] = {**statement["activation"], "from_day": moved}
+    farm_bound = [day for day in statement["days"] if day["day"] >= activate]
+    assert farm_bound, "this test needs at least one farm-bound day"
+
+    statement_path, key_path = write_docs(tmp_path, statement, identity.public())
+    assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) != 0
+    output = capsys.readouterr().out
+    for day in farm_bound:
+        assert f"{day['day']}: sealed under the signature rule its date requires" in output
+
+
+def test_a_statement_for_another_farm_is_refused(tmp_path, verifier, monkeypatch, capsys):
+    """Same device key, same valid signatures, different farm. The client who
+    was handed a key for farm A must not be billed for farm B's ledger."""
+    identity, ledger = build_month(tmp_path)
+    statement = ledger.statement(months_of(ledger)[0])
+    public = dict(identity.public())
+    public["farm_id"] = DeviceIdentity.generate().farm_id
+
+    statement_path, key_path = write_docs(tmp_path, statement, public)
+    assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) != 0
+    assert "for the farm whose key you were given" in capsys.readouterr().out
+
+
+def test_the_statement_signature_is_checked(tmp_path, verifier, monkeypatch, capsys):
+    """A field the arithmetic checks would not notice, changed after signing."""
+    identity, ledger = build_month(tmp_path)
+    statement = ledger.statement(months_of(ledger)[0])
+    statement["margin_ppm"] = statement["margin_ppm"] + 1
+
+    statement_path, key_path = write_docs(tmp_path, statement, identity.public())
+    assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) != 0
+    assert "signed by the device key, totals included" in capsys.readouterr().out
+
+
+def test_the_activation_entry_cannot_be_moved_without_breaking_its_signature(
+    tmp_path, verifier, monkeypatch, capsys
+):
+    identity, ledger = build_month(tmp_path)
+    statement = ledger.statement(months_of(ledger)[0])
+    statement["activation"] = {**statement["activation"], "from_day": "2099-01-01"}
+
+    statement_path, key_path = write_docs(tmp_path, statement, identity.public())
+    assert run_verifier(verifier, monkeypatch, statement_path, ledger.records_dir, key_path) != 0
+    assert "activation entry is signed by the device key" in capsys.readouterr().out
