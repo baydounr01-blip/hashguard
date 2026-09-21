@@ -23,6 +23,9 @@ credit in the advisory and in the changelog unless you would rather not have one
   to make a tampered ledger verify, or an honest one fail.
 - The console (`web/`) — anything that gets script execution, exfiltrates the
   token, or makes an invalid statement display as valid.
+- The self-audit (`selfaudit.py`) — in particular any way to make a probe report
+  PASS while the defence it names is not standing. A self-check that can be
+  made to lie is worse than no self-check, because someone will trust it.
 
 **Out of scope** — these are documented limits, not oversights. See
 [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md):
@@ -70,12 +73,24 @@ precisely what they are running.
 8. **Verify your first statement by hand**, with `tools/hashguard_verify.py`. If
    the checking mechanism only ever gets used by the party that wrote it, it is
    decoration.
+9. **Run `python3 -m hashguard --self-audit` after installing, and after every
+   upgrade.** It replays every finding in `docs/AUDIT_v1.md` against the agent
+   running on *your* machine, in *your* configuration, and reports one verdict
+   per finding. Read the amber lines: **NOT CHECKED** means a probe could not
+   run here, and it is deliberately not counted as a pass. Use `--json` to keep
+   it in a monitor and `--strict` to make an unrunnable check fail.
+
+   The audit starts a throwaway copy of the API on `127.0.0.1:0` with its own
+   rate limiter, so nothing it does can lock you out of the console, and it
+   writes nothing: no ledger record, no seal, no config change, no relay call.
 
 ## What we commit to
 
 - Any finding that lets a bill be wrong, a network be pivoted into, or a key be
   read gets a fix and a public advisory.
-- Fixes ship with a regression test named in the advisory.
+- Fixes ship with a regression test named in the advisory, and where the fix is
+  a defence rather than a correction, with a `--self-audit` line that goes red
+  if it is ever reopened.
 - The audit of v1 stays published, in full, including the parts that are
   embarrassing. A vendor's security posture is better judged by what they
   disclose about their own past code than by what they claim about their current

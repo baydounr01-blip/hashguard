@@ -85,6 +85,23 @@ to be trusted.
   board and fan counts, log directory size.
 - **Secrets are `0600` from the first byte**, and a device key whose permissions
   have loosened is refused rather than used with a warning.
+- **The defences can be re-tested on the machine they are running on.**
+  `hashguard --self-audit` replays every finding in `docs/AUDIT_v1.md` against a
+  throwaway copy of the live API, and separates *held* from *could not be
+  checked*. This matters because most of the properties above degrade through
+  configuration and operations, not through code: a `chmod` from a backup
+  script, an origin added to get a demo working, a token pasted in by hand.
+  A test suite in a repository cannot see any of that.
+  *Tests: `test_selfaudit.py::test_the_self_audit_is_green_on_this_build`,
+  `::test_reopening_the_config_write_surface_turns_audit_04_red`,
+  `::test_a_loosened_key_file_turns_audit_14_red`,
+  `::test_the_report_states_what_it_did_not_check`.*
+- **A degraded signature backend is announced, not hidden.** Without
+  `cryptography` the agent signs with HMAC-SHA256 and says so in the startup
+  banner and in the statement. The self-audit runs the banner in a second
+  interpreter with `cryptography` blocked and requires the sentence to be there.
+  *Test: `test_selfaudit.py::test_the_self_audit_is_green_on_this_build`
+  (the `signing` line).*
 
 ### The console
 
@@ -140,6 +157,16 @@ useful than implying otherwise.
 - **Price feed integrity beyond TLS.** A feed that is authentic but wrong
   produces authentic, wrong decisions. The price used is sealed into the record,
   so the error is at least *attributable* after the fact.
+- **The self-audit runs inside the process it is auditing.** It is a check
+  against regression and misconfiguration, not against a hostile build: code
+  that has been modified to lie can modify the audit too. The only defence
+  against that is comparing the running package with a digest published
+  elsewhere, which is why `--self-audit` reports that comparison as **NOT
+  CHECKED** until a release publishes one, instead of leaving it out.
+- **What the token check measures is shape, not secrecy.** Length, alphabet,
+  distinct characters and repetition are all that can be read off a string. A
+  memorable passphrase that clears all four still passes, and the report says
+  so on the line rather than implying a strength measurement nobody took.
 
 ## Known trade-offs
 

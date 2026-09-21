@@ -93,14 +93,26 @@ def _read_capped(response, limit: int = MAX_RESPONSE_BYTES) -> bytes:
     return body
 
 
-def fetch_public_json(url: str, headers: dict | None = None, timeout: float = DEFAULT_TIMEOUT):
-    """GET a JSON document from the public internet, or refuse and say why."""
+def fetch_public_bytes(
+    url: str,
+    headers: dict | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    accept: str = "application/json",
+) -> bytes:
+    """GET a document from the public internet, or refuse and say why.
+
+    The policy lives here and :func:`fetch_public_json` is a thin parse on top,
+    so a release digest and a price feed are fetched under exactly the same
+    rules: https only, a public address, the vetted address pinned for the
+    connection, no redirects, and a byte cap. A second fetcher with its own
+    idea of what is safe is how a guard stops being a guard.
+    """
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise NetGuardError(
-            f"price sources must be https, got {parsed.scheme or 'no scheme'!r}: "
-            "an hourly price fetched over plaintext is an hourly price anyone on "
-            "the path can choose for you"
+            f"outbound fetches must be https, got {parsed.scheme or 'no scheme'!r}: "
+            "a price -- or a release digest -- fetched over plaintext is one anyone "
+            "on the path can choose for you"
         )
     if not parsed.hostname:
         raise NetGuardError(f"no host in {url!r}")
@@ -123,7 +135,7 @@ def fetch_public_json(url: str, headers: dict | None = None, timeout: float = DE
         path = parsed.path or "/"
         if parsed.query:
             path += "?" + parsed.query
-        connection.request("GET", path, headers={"Accept": "application/json", **(headers or {})})
+        connection.request("GET", path, headers={"Accept": accept, **(headers or {})})
         response = connection.getresponse()
         if 300 <= response.status < 400:
             raise NetGuardError(
@@ -137,6 +149,12 @@ def fetch_public_json(url: str, headers: dict | None = None, timeout: float = DE
         raise NetGuardError(f"request to {parsed.hostname} failed: {exc}") from exc
     finally:
         connection.close()
+    return body
+
+
+def fetch_public_json(url: str, headers: dict | None = None, timeout: float = DEFAULT_TIMEOUT):
+    """GET a JSON document from the public internet, or refuse and say why."""
+    body = fetch_public_bytes(url, headers=headers, timeout=timeout)
     try:
         return json.loads(body)
     except json.JSONDecodeError as exc:

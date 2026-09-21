@@ -9,6 +9,7 @@ can quietly edit afterwards.
     python3 -m hashguard                 read config.json and run for real
     python3 -m hashguard --check         validate the configuration and exit
     python3 -m hashguard --statement 2026-09 > statement.json
+    python3 -m hashguard --self-audit    replay docs/AUDIT_v1.md against this agent
 
 Every failure in the loop is contained. A miner that will not answer is a gap
 in the data. A price feed that will not load means mine. A relay that refuses
@@ -208,6 +209,46 @@ def poll_loop(state: AgentState, simulated: SimulatedFarm | None) -> None:
         time.sleep(int(state.config["poll_seconds"]))
 
 
+def banner_lines(config: dict, identity: DeviceIdentity, state: AgentState, demo: bool = False) -> list[str]:
+    """What the agent says about itself before it starts.
+
+    A separate function because the startup banner carries a *degradation
+    notice*: when ``cryptography`` is missing, the seals are HMAC-signed and the
+    banner has to say so. That notice is a security property, and a security
+    property nobody can call is a security property nobody can test. The
+    self-audit runs this in a subprocess with ``cryptography`` blocked and reads
+    what comes out.
+    """
+    api = config["api"]
+    lines = [
+        BANNER,
+        f"  farm         {config['farm_name']}",
+        f"  api          http://{api['bind_host']}:{api['api_port']}  (header X-HashGuard-Token)",
+        f"  mode         {'DEMO (simulated farm)' if demo else 'PRODUCTION'}",
+        f"  curtailment  {config['curtailment']['mode']}",
+        f"  break-even   {state.curtailment.breakeven_ppm() / 1e6:.4f} EUR/kWh",
+        f"  device       {identity.device_id}  ({identity.algorithm})",
+        f"  farm id      {identity.farm_id or 'none (pre-2.1 key file)'}",
+        f"  ledger       {config['paths']['ledger_dir']}/",
+    ]
+    if state.ledger.activated_from:
+        lines.append(f"  seals        name this farm from {state.ledger.activated_from} onward")
+    else:
+        lines.append("  seals        name no farm: signatures are not bound to this installation")
+    if identity.algorithm != "ed25519":
+        lines.append(
+            "  note         seals are HMAC-signed; install 'cryptography' for third-party "
+            "auditable ed25519"
+        )
+    if not api.get("cors_origins"):
+        lines.append(
+            "  note         no CORS origins listed: use the console from this machine, or "
+            "list its origin"
+        )
+    lines.append("")
+    return lines
+
+
 def build_state(config: dict, identity: DeviceIdentity) -> AgentState:
     paths = config["paths"]
     return AgentState(
@@ -231,6 +272,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="validate the configuration and exit")
     parser.add_argument("--statement", metavar="YYYY-MM", help="print a signed statement and exit")
     parser.add_argument("--seal", action="store_true", help="seal every finished day and exit")
+    parser.add_argument(
+        "--self-audit",
+        action="store_true",
+        help="replay docs/AUDIT_v1.md against this running agent and exit",
+    )
+    parser.add_argument("--json", action="store_true", help="with --self-audit: machine-readable")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="with --self-audit: a check that could not run counts as a failure",
+    )
+    parser.add_argument(
+        "--release-sums",
+        metavar="URL",
+        help="with --self-audit: https URL of the SHA256SUMS published for this version",
+    )
     parser.add_argument("--config", default="config.json")
     args = parser.parse_args(argv)
 
@@ -259,25 +316,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sealed {seal['day']}: root {seal['merkle_root']}")
         return 0
 
-    api = config["api"]
-    print(BANNER)
-    print(f"  farm         {config['farm_name']}")
-    print(f"  api          http://{api['bind_host']}:{api['api_port']}  (header X-HashGuard-Token)")
-    print(f"  mode         {'DEMO (simulated farm)' if args.demo else 'PRODUCTION'}")
-    print(f"  curtailment  {config['curtailment']['mode']}")
-    print(f"  break-even   {state.curtailment.breakeven_ppm() / 1e6:.4f} EUR/kWh")
-    print(f"  device       {identity.device_id}  ({identity.algorithm})")
-    print(f"  farm id      {identity.farm_id or 'none (pre-2.1 key file)'}")
-    print(f"  ledger       {config['paths']['ledger_dir']}/")
-    if state.ledger.activated_from:
-        print(f"  seals        name this farm from {state.ledger.activated_from} onward")
-    else:
-        print("  seals        name no farm: signatures are not bound to this installation")
-    if identity.algorithm != "ed25519":
-        print("  note         seals are HMAC-signed; install 'cryptography' for third-party auditable ed25519")
-    if not api.get("cors_origins"):
-        print("  note         no CORS origins listed: use the console from this machine, or list its origin")
-    print()
+    if args.self_audit:
+        from .selfaudit import exit_code, format_report, report_json, run
+
+        checks = run(state, config_path=args.config, sums_url=args.release_sums)
+        if args.json:
+            print(json.dumps(report_json(checks, args.strict), indent=2, ensure_ascii=False))
+        else:
+            print(format_report(checks, colour=sys.stdout.isatty(), strict=args.strict))
+        return exit_code(checks, args.strict)
+
+    for line in banner_lines(config, identity, state, demo=args.demo):
+        print(line)
 
     simulated = SimulatedFarm() if args.demo else None
     threading.Thread(target=poll_loop, args=(state, simulated), daemon=True).start()

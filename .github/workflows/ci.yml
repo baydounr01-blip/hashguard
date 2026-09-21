@@ -62,6 +62,54 @@ jobs:
           test -s ledger/records/*.jsonl
           echo "Degraded cleanly to HMAC and said so."
 
+  self-audit:
+    name: "the v1 findings, replayed against a running agent"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Run an agent long enough to have a ledger, then audit it
+        run: |
+          set -e
+          mkdir -p /tmp/hg-audit && cd /tmp/hg-audit
+          # A fresh install has no records, and AUDIT-05 would report NOT
+          # CHECKED rather than replay the tamper probe -- which is honest, and
+          # useless as a gate. Poll fast for half a minute so the check that
+          # matters most has a chain to break.
+          echo '{"poll_seconds": 5}' > config.json
+          timeout 32 python3 -u -m hashguard --demo > run.log 2>&1 || true
+          records=$(cat ledger/records/*.jsonl | wc -l)
+          echo "ledger holds $records records"
+          test "$records" -ge 2
+          # Stricter than --strict, and more useful: a check that could not
+          # run fails the build unless it is the one amber line we already
+          # know about by name. Today that is the release digest, which no tag
+          # publishes yet. Anything else going amber -- a ledger that stopped
+          # being readable, a web/ that moved -- is a regression in the audit's
+          # own reach and must not pass quietly.
+          set +e
+          python3 -m hashguard --self-audit --json > audit.json
+          code=$?
+          set -e
+          python3 - <<'PY'
+          import json, sys
+          report = json.load(open("audit.json"))
+          for check in report["checks"]:
+              print(f"{check['verdict']:<11} {check['finding']:<9} {check['claim']}")
+              print(f"            {'':<9} . {check['observed']}")
+          failed = [c["finding"] for c in report["checks"] if c["verdict"] == "FAIL"]
+          amber = [c["finding"] for c in report["checks"] if c["verdict"] == "NOT CHECKED"]
+          if failed:
+              sys.exit(f"self-audit failed: {failed}")
+          if set(amber) - {"build"}:
+              sys.exit(f"a check could not run, and it is not the known one: {amber}")
+          print(f"\nself-audit: {report['summary']}")
+          PY
+          exit $code
+
   end-to-end-verification:
     name: "an invoice verifies, and a tampered one does not"
     runs-on: ubuntu-latest

@@ -61,6 +61,9 @@ startup with an explanation, rather than accepted.
 *Tests: `test_security.py::test_wildcard_cors_is_refused`,
 `test_api.py::test_an_unlisted_origin_gets_nothing`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-01`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-02 · High · Server-side request forgery via the price feed
 
 ```python
@@ -79,6 +82,9 @@ link-local, reserved or multicast space, connects to the address it vetted
 caps the response at 512 KB. `price_url` is operator-only.
 *Tests: `test_security.py::test_price_feeds_cannot_be_aimed_inside_the_network`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-02`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-03 · High · Lateral movement via webhooks
 
 ```python
@@ -96,6 +102,9 @@ local-network action. The allowlist is operator-only, and `webhook` mode with
 an empty allowlist is refused at startup rather than silently doing nothing.
 *Tests: `test_security.py::test_a_webhook_host_must_be_on_the_allowlist`,
 `::test_a_webhook_may_not_point_at_the_public_internet`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-03`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-04 · High · The config endpoint accepted anything
 
@@ -117,6 +126,9 @@ editing `config.json` on the machine, which requires the one thing the threat
 model already assumes an attacker lacks.
 *Tests: `test_security.py::test_the_console_can_only_turn_the_calibration_knobs`,
 `test_api.py::test_the_console_cannot_change_the_fee_or_the_price_source`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-04`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-05 · High · The billing basis had no integrity
 
@@ -145,6 +157,9 @@ proofs, and `tools/hashguard_verify.py` re-derives every hash in it from the raw
 records without importing any HashGuard code.
 *Tests: all of `test_ledger.py`, `test_verifier.py`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-05`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-06 · High · Token authentication had no cost attached
 
 ```python
@@ -167,6 +182,9 @@ quantumbot547 repository, which guards that project's client access endpoint.
 *Tests: `test_security.py` rate-limiting section,
 `test_api.py::test_repeated_guessing_gets_blocked_with_a_retry_after`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-06`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-07 · Medium · Only the token was redacted
 
 ```python
@@ -183,6 +201,9 @@ also shallow, so nested mutations would have escaped.
 price-feed header value, and every webhook URL.
 *Test: `test_security.py::test_the_config_endpoint_redacts_every_secret`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-07`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-08 · High · Path traversal in `log_dir`
 
 ```python
@@ -197,6 +218,9 @@ directory-creation and file-append primitive with the agent's privileges.
 **v2.** Paths are operator-only, and `config.validate` refuses any that resolves
 outside the working directory.
 *Test: `test_security.py::test_paths_cannot_escape_the_working_directory`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-08`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-09 · Medium · Unbounded request body
 
@@ -214,6 +238,9 @@ body that is not a JSON object — and the connection is closed on the paths whe
 the body is never read, so a refusal cannot desynchronise a keep-alive
 connection.
 *Tests: `test_api.py::test_an_oversized_body_is_refused`, `::test_a_non_json_body_is_refused`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-09`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-10 · Medium · Unbounded read from the miner socket
 
@@ -236,6 +263,9 @@ boards and 16 fans parsed from a reply, and implausible temperatures and fan
 speeds discarded.
 *Tests: `test_collector.py`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-10`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-11 · High · Stored XSS in the console
 
 ```javascript
@@ -256,6 +286,9 @@ through `textContent` on a node built with `createElement`. A strict CSP is the
 backstop.
 *Enforced by `web/console.html`; see also the CSP notes in `docs/THREAT_MODEL.md`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-11`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-12 · Medium · Bound to `0.0.0.0` by default
 
 ```python
@@ -271,6 +304,9 @@ port.
 own settings dialog already recommended. Binding wider requires setting
 `api.i_understand_non_loopback_bind`, so it is a decision rather than a default.
 *Test: `test_security.py::test_binding_beyond_loopback_requires_saying_so`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-12`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-13 · Medium · Token in `localStorage`, no CSP
 
@@ -299,6 +335,9 @@ device key's permissions are re-checked on load and a loosened key is refused
 outright rather than used with a warning.
 *Tests: `test_security.py::test_key_files_are_written_owner_only`,
 `::test_a_world_readable_key_is_refused_not_warned_about`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-14`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-15 · Low · The console gate
 

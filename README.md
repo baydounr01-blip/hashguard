@@ -180,6 +180,36 @@ test that fails if it is ever reopened. The threat model is in
 [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md); reporting is in
 [`SECURITY.md`](SECURITY.md).
 
+### The audit, replayed against your machine
+
+A document is a claim and a test suite runs against fixtures the same people
+wrote. Neither answers the question an operator has six months after
+installation, which is whether the defences are still standing *here*.
+
+```bash
+python3 -m hashguard --self-audit          # one verdict per finding
+python3 -m hashguard --self-audit --json   # the same, for a monitor
+python3 -m hashguard --self-audit --strict # a check that could not run fails
+```
+
+It starts the agent's own API on `127.0.0.1:0` and attacks it the way the v1
+findings were found: a hostile `Origin`, a config patch aimed at the fee, a URL
+pointing at the cloud metadata service, a lie in `Content-Length`, a miner that
+will not stop talking, wrong tokens until the door shuts. Then it checks the
+things that are not requests — file permissions, token shape, what the console
+page is allowed to execute, and whether this build matches a published digest.
+
+Three verdicts, and the third is the point. **PASS** means the probe ran and the
+defence held. **FAIL** means it ran and the defence did not. **NOT CHECKED**
+means the probe could not run here — no ledger yet, no published digest for this
+version — and it is printed in amber, never folded into PASS, and counted as a
+failure under `--strict`. A comparison that could not be made is not a
+comparison that passed.
+
+It never touches a relay, seals nothing, writes nothing to the ledger, and reads
+no miner. Its one outbound request is the digest lookup, through the same guard
+a price feed gets. Nothing it does can stop mining or change a bill.
+
 Highlights of the posture:
 
 | | |
@@ -194,6 +224,7 @@ Highlights of the posture:
 | **Signatures** | bound to the farm from an activation day written into the ledger; the statement signed as a document, not only the seals inside it |
 | **Console** | strict CSP, no `innerHTML` from agent data, token in `sessionStorage` |
 | **Dependencies** | none. `cryptography` is optional, for ed25519 |
+| **Self-check** | `--self-audit` replays every v1 finding against the running agent and reports what it could *not* check separately from what passed |
 
 ### No runtime dependencies
 
@@ -247,6 +278,7 @@ src/hashguard/
   canonical.py   the one encoding both parties hash; refuses floats
   merkle.py      Merkle roots, inclusion proofs, the bbu-style seal header
   rules.py       which signature rule governs a day, and what each one signs
+  commit.py      commit/reveal: a decision is sealed before it is corroborated
   ledger.py      append-only records, daily seals, the monthly statement
   attest.py      the corroboration auditor (ported from bbu.signature, P12)
   identity.py    ed25519 / HMAC device keys, the farm id, 0600 and checked
@@ -259,9 +291,11 @@ src/hashguard/
   ratelimit.py   progressive blocking, ported from quantumbot547
   config.py      typed schema and the narrow console-writable surface
   api.py         the HTTP surface
+  selfaudit.py   the v1 findings, replayed against the running agent
   agent.py       the loop and the CLI
 
 tools/hashguard_verify.py   the independent verifier (imports no HashGuard)
+tools/package_digest.py     the digest line a release publishes
 web/                        console (strict CSP, in-browser verification)
 docs/AUDIT_v1.md            every v1 finding and its fix
 docs/THREAT_MODEL.md        what this defends against, and what it does not
