@@ -16,7 +16,7 @@ from hashguard.config import (
     default_config,
     validate,
 )
-from hashguard.identity import DeviceIdentity, IdentityError, verify_signature
+from hashguard.identity import DeviceIdentity, IdentityError, is_farm_id, verify_signature
 from hashguard.netguard import NetGuardError, fetch_public_json, is_public, validate_webhook
 from hashguard.ratelimit import RateLimiter
 
@@ -50,6 +50,28 @@ def test_a_world_readable_key_is_refused_not_warned_about(tmp_path):
     os.chmod(path, 0o644)
     with pytest.raises(IdentityError, match="readable beyond its owner"):
         DeviceIdentity.load_or_create(path)
+
+
+def test_the_farm_id_is_public_material_and_survives_a_key_file_rewrite(tmp_path):
+    """A v2.0.0 key file names no farm. It is given one on first load, written
+    back owner-only, and never minted again -- otherwise every restart would
+    produce a ledger that disagrees with the one before it."""
+    import json
+
+    path = str(tmp_path / "device_key.json")
+    DeviceIdentity.generate().save(path)
+    data = json.loads(open(path, encoding="utf-8").read())
+    del data["farm_id"]                       # exactly what v2.0.0 wrote
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(data, handle)
+    os.chmod(path, 0o600)
+
+    reopened = DeviceIdentity.load_or_create(path)
+    assert is_farm_id(reopened.farm_id)
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600, "the rewrite must not loosen the file"
+    assert DeviceIdentity.load_or_create(path).farm_id == reopened.farm_id, "minted once, then kept"
+    assert reopened.public()["farm_id"] == reopened.farm_id, "the farm id is meant to be published"
+    assert "secret_b64" not in reopened.public()
 
 
 def test_hmac_identity_admits_it_is_not_third_party_verifiable():
