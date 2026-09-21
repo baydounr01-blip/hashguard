@@ -41,12 +41,43 @@ credit in the advisory and in the changelog unless you would rather not have one
 
 | Version | Supported |
 |---|---|
-| 2.x | yes |
+| 2.1.x | yes |
+| 2.0.x | yes — a 2.0.0 ledger is read, billed and verified unchanged by 2.1 |
 | 1.x (`index-2.html`) | **no** — see [docs/AUDIT_v1.md](docs/AUDIT_v1.md) |
 
 v1 is not patched and should not be run. Its findings are published in full
 because the software was distributed and anyone still running it should know
 precisely what they are running.
+
+## What 2.1 added to the attack surface
+
+Stated plainly, because a release that only lists its defences is not a
+security document.
+
+- **`ledger/activation.json`** — a new file, read at every start and written
+  once. It is signed by the device key and names the farm and the day
+  farm-bound seals begin. It is *not* a secret. Changing it changes nothing
+  retroactively: the rule of a sealed day is derived from the day, and an
+  activation that would move a sealed day's rule is refused, so the worst an
+  attacker with write access to it achieves is a ledger that refuses to open.
+  (Write access to that directory is already game over for other reasons.)
+- **The farm id in `device_key.json`** — 32 bytes of public material stored
+  beside the private key. It is published in `device_public.json` and in every
+  statement. It is meant to be known; comparing it once, out of band, is what
+  makes it useful.
+- **One new outbound request, and only on request.** `--self-audit
+  --release-sums URL` fetches a published digest file. It goes through the same
+  `netguard` policy a price feed gets — https only, a public address, the
+  vetted address pinned for the connection, no redirects, a byte cap — and it
+  happens only when that flag is passed. The agent's normal run makes no new
+  outbound request.
+- **A short-lived HTTP server on `127.0.0.1:0`,** started by `--self-audit` and
+  shut down when it finishes. It carries the agent's own handlers over a deep
+  copy of the configuration and its own rate limiter, so probing it cannot
+  change live settings and cannot lock anyone out of the running console.
+- **No new network-writable setting.** The console-writable surface is the same
+  bounded calibration knobs it was in 2.0.0. Nothing added here is settable
+  over the network.
 
 ## Running it safely
 

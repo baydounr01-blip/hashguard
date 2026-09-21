@@ -351,6 +351,8 @@ web/                        console (strict CSP, in-browser verification)
 docs/AUDIT_v1.md            every v1 finding and its fix
 docs/THREAT_MODEL.md        what this defends against, and what it does not
 docs/PLAN_v2.1.md           what is being ported from RAMI-Chain, and how
+RELEASE_NOTES.md            what it costs, how it was checked, what is missing
+PENDING-v2.1.0.md           what was verified, how it is built, what is left
 ```
 
 ## Where this comes from
