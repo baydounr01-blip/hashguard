@@ -7,8 +7,9 @@ can quietly edit afterwards.
 
     python3 -m hashguard --demo          simulated farm, nothing to install
     python3 -m hashguard                 read config.json and run for real
-    python3 -m hashguard --check         validate the config and exit
+    python3 -m hashguard --check         validate the configuration and exit
     python3 -m hashguard --statement 2026-09 > statement.json
+    python3 -m hashguard --self-audit    replay docs/AUDIT_v1.md against this agent
 
 Every failure in the loop is contained. A miner that will not answer is a gap
 in the data. A price feed that will not load means mine. A relay that refuses
@@ -30,6 +31,7 @@ from .adaptive import Adaptive
 from .api import AgentState, serve
 from .attest import dark_fraction_ppm
 from .collector import SimulatedFarm, cgminer_command, parse_stats
+from .commit import commit_hash, decision_snapshot, new_nonce, price_curve_hash
 from .config import ConfigError, load, validate
 from .identity import DeviceIdentity
 from .ledger import GuardedLedger, Interval
@@ -45,8 +47,22 @@ BANNER = r"""
 """
 
 
+def _iso(moment: datetime) -> str:
+    return moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def poll_once(state: AgentState, simulated: SimulatedFarm | None, baseline: HashrateBaseline) -> None:
-    """One full cycle. Holds the lock only while mutating shared state."""
+    """One full cycle, in the order that makes a claim checkable.
+
+    Read the miners, close the interval that was opened at the previous poll
+    with the telemetry just read, decide the interval that starts now, commit
+    that decision, and write both into one record. The commitment for an
+    interval is therefore on disk a whole poll before the hashrate that will
+    corroborate it is measured -- which is the entire point, and is what
+    :mod:`hashguard.commit` exists to let anyone check afterwards.
+
+    Holds the lock only while mutating shared state.
+    """
     snapshot: dict = {}
     if simulated is not None:
         for index in range(simulated.miners):
@@ -63,49 +79,92 @@ def poll_once(state: AgentState, simulated: SimulatedFarm | None, baseline: Hash
     total_gh = int(sum(b["hashrate_gh"] for d in live.values() for b in d["boards"]))
 
     with state.lock:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         state.snapshot = live
-        state.last_poll = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        state.last_poll = _iso(now)
         fresh_alerts = state.engine.update(live)
+
+        # 1. The interval that just closed, and the telemetry that judges it.
+        #    Its decision was committed one poll ago and is revealed below.
+        closing = state.open_interval
+        # The baseline only learns from intervals we believe were mining, so a
+        # long curtailment cannot slowly redefine what "running" looks like.
+        baseline.observe(total_gh, (closing or {}).get("action", "MINE") == "MINE")
+        state.baseline_gh = baseline.value()
+        state.observed_gh = total_gh
+
+        curtailment = state.config["curtailment"]
+        poll_seconds = int(state.config["poll_seconds"])
+        machines = len(state.config["miners"]) or len(live)
+
+        # 2. Decide the interval that starts now, act on it, and commit it --
+        #    before a single byte of the telemetry that will corroborate it
+        #    has been read. Acting comes first: a failure to hash must never
+        #    be able to delay a relay.
         decision = state.curtailment.decide()
         notes = state.curtailment.act()
         if notes:
             state.notes.extend(notes)
             del state.notes[:-50]
-
-        # The baseline only learns from intervals we believe were mining, so a
-        # long curtailment cannot slowly redefine what "running" looks like.
-        baseline.observe(total_gh, decision["action"] == "MINE")
-        state.baseline_gh = baseline.value()
-        state.observed_gh = total_gh
-
-        curtailment = state.config["curtailment"]
-        seconds = int(state.config["poll_seconds"])
-        machines = len(state.config["miners"]) or len(live)
         executed = curtailment["mode"] != "advisory"
-        paused = decision["action"] == "PAUSE"
-        claimed_wh = to_wh(curtailment["power_kw"], seconds, machines) if paused else 0
-        revenue_per_second = (
-            float(curtailment["hashrate_th"])
-            * float(curtailment["hashprice_usd_th_day"])
-            / float(curtailment["eur_usd"])
-            / 86400.0
-        )
-        claimed_lost = to_micro(revenue_per_second * seconds * machines, "mining_lost") if paused else 0
+        opening = {
+            "action": decision["action"],
+            "price_ppm_per_kwh": int(decision.get("price_ppm_per_kwh", 0)),
+            "breakeven_ppm_per_kwh": int(decision.get("breakeven_ppm_per_kwh", 0)),
+            "opened": _iso(now),
+            "price_curve_hash": price_curve_hash(state.curtailment.prices_ppm),
+        }
+        nonce = new_nonce()
+        commitment = commit_hash(decision_snapshot(opening), nonce)
 
-        state.ledger.record(
-            Interval(
-                action=decision["action"],
-                executed=executed,
+        # 3. One record: the closed interval in clear, revealing its own
+        #    decision, carrying the commitment of the one now running.
+        if closing is None:
+            # The first poll of a session closes nothing. A zero-second record
+            # that claims nothing, so that the commitment has somewhere to go.
+            interval = Interval(
+                action="MINE", executed=executed, n_miners=machines, seconds=0,
+                price_ppm_per_kwh=0, breakeven_ppm_per_kwh=0,
+                claimed_wh=0, claimed_mining_lost_micro_eur=0,
+                baseline_gh=state.baseline_gh, observed_gh=total_gh,
+                opened=_iso(now), commit=commitment, reveal=None, price_curve_hash=None,
+            )
+        else:
+            # Never claim more time than the poll interval, whatever the clock
+            # says: an agent that stalled under-claims rather than over-claims.
+            elapsed = min(poll_seconds, max(0, int((now - closing["at"]).total_seconds())))
+            was_paused = closing["action"] == "PAUSE"
+            revenue_per_second = (
+                float(curtailment["hashrate_th"])
+                * float(curtailment["hashprice_usd_th_day"])
+                / float(curtailment["eur_usd"])
+                / 86400.0
+            )
+            interval = Interval(
+                action=closing["action"],
+                executed=closing["executed"],
                 n_miners=machines,
-                seconds=seconds,
-                price_ppm_per_kwh=int(decision.get("price_ppm_per_kwh", 0)),
-                breakeven_ppm_per_kwh=int(decision.get("breakeven_ppm_per_kwh", 0)),
-                claimed_wh=claimed_wh,
-                claimed_mining_lost_micro_eur=claimed_lost,
+                seconds=elapsed,
+                price_ppm_per_kwh=closing["price_ppm_per_kwh"],
+                breakeven_ppm_per_kwh=closing["breakeven_ppm_per_kwh"],
+                claimed_wh=to_wh(curtailment["power_kw"], elapsed, machines) if was_paused else 0,
+                claimed_mining_lost_micro_eur=(
+                    to_micro(revenue_per_second * elapsed * machines, "mining_lost")
+                    if was_paused
+                    else 0
+                ),
                 baseline_gh=state.baseline_gh,
                 observed_gh=total_gh,
+                opened=closing["opened"],
+                commit=commitment,
+                reveal={"commit_seq": state.ledger.next_seq - 1, "nonce": closing["nonce"]},
+                price_curve_hash=closing["price_curve_hash"],
             )
-        )
+
+        state.ledger.record(interval, when=now)
+        state.open_interval = {**opening, "at": now, "executed": executed, "nonce": nonce,
+                               "commit": commitment}
+        paused = decision["action"] == "PAUSE"
         state.history.append(
             {
                 "ts": state.last_poll,
@@ -150,6 +209,46 @@ def poll_loop(state: AgentState, simulated: SimulatedFarm | None) -> None:
         time.sleep(int(state.config["poll_seconds"]))
 
 
+def banner_lines(config: dict, identity: DeviceIdentity, state: AgentState, demo: bool = False) -> list[str]:
+    """What the agent says about itself before it starts.
+
+    A separate function because the startup banner carries a *degradation
+    notice*: when ``cryptography`` is missing, the seals are HMAC-signed and the
+    banner has to say so. That notice is a security property, and a security
+    property nobody can call is a security property nobody can test. The
+    self-audit runs this in a subprocess with ``cryptography`` blocked and reads
+    what comes out.
+    """
+    api = config["api"]
+    lines = [
+        BANNER,
+        f"  farm         {config['farm_name']}",
+        f"  api          http://{api['bind_host']}:{api['api_port']}  (header X-HashGuard-Token)",
+        f"  mode         {'DEMO (simulated farm)' if demo else 'PRODUCTION'}",
+        f"  curtailment  {config['curtailment']['mode']}",
+        f"  break-even   {state.curtailment.breakeven_ppm() / 1e6:.4f} EUR/kWh",
+        f"  device       {identity.device_id}  ({identity.algorithm})",
+        f"  farm id      {identity.farm_id or 'none (pre-2.1 key file)'}",
+        f"  ledger       {config['paths']['ledger_dir']}/",
+    ]
+    if state.ledger.activated_from:
+        lines.append(f"  seals        name this farm from {state.ledger.activated_from} onward")
+    else:
+        lines.append("  seals        name no farm: signatures are not bound to this installation")
+    if identity.algorithm != "ed25519":
+        lines.append(
+            "  note         seals are HMAC-signed; install 'cryptography' for third-party "
+            "auditable ed25519"
+        )
+    if not api.get("cors_origins"):
+        lines.append(
+            "  note         no CORS origins listed: use the console from this machine, or "
+            "list its origin"
+        )
+    lines.append("")
+    return lines
+
+
 def build_state(config: dict, identity: DeviceIdentity) -> AgentState:
     paths = config["paths"]
     return AgentState(
@@ -173,6 +272,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="validate the configuration and exit")
     parser.add_argument("--statement", metavar="YYYY-MM", help="print a signed statement and exit")
     parser.add_argument("--seal", action="store_true", help="seal every finished day and exit")
+    parser.add_argument(
+        "--self-audit",
+        action="store_true",
+        help="replay docs/AUDIT_v1.md against this running agent and exit",
+    )
+    parser.add_argument("--json", action="store_true", help="with --self-audit: machine-readable")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="with --self-audit: a check that could not run counts as a failure",
+    )
+    parser.add_argument(
+        "--release-sums",
+        metavar="URL",
+        help="with --self-audit: https URL of the SHA256SUMS published for this version",
+    )
     parser.add_argument("--config", default="config.json")
     args = parser.parse_args(argv)
 
@@ -201,20 +316,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"sealed {seal['day']}: root {seal['merkle_root']}")
         return 0
 
-    api = config["api"]
-    print(BANNER)
-    print(f"  farm         {config['farm_name']}")
-    print(f"  api          http://{api['bind_host']}:{api['api_port']}  (header X-HashGuard-Token)")
-    print(f"  mode         {'DEMO (simulated farm)' if args.demo else 'PRODUCTION'}")
-    print(f"  curtailment  {config['curtailment']['mode']}")
-    print(f"  break-even   {state.curtailment.breakeven_ppm() / 1e6:.4f} EUR/kWh")
-    print(f"  device       {identity.device_id}  ({identity.algorithm})")
-    print(f"  ledger       {config['paths']['ledger_dir']}/")
-    if identity.algorithm != "ed25519":
-        print("  note         seals are HMAC-signed; install 'cryptography' for third-party auditable ed25519")
-    if not api.get("cors_origins"):
-        print("  note         no CORS origins listed: use the console from this machine, or list its origin")
-    print()
+    if args.self_audit:
+        from .selfaudit import exit_code, format_report, report_json, run
+
+        checks = run(state, config_path=args.config, sums_url=args.release_sums)
+        if args.json:
+            print(json.dumps(report_json(checks, args.strict), indent=2, ensure_ascii=False))
+        else:
+            print(format_report(checks, colour=sys.stdout.isatty(), strict=args.strict))
+        return exit_code(checks, args.strict)
+
+    for line in banner_lines(config, identity, state, demo=args.demo):
+        print(line)
 
     simulated = SimulatedFarm() if args.demo else None
     threading.Thread(target=poll_loop, args=(state, simulated), daemon=True).start()

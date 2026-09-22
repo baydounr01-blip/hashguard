@@ -5,6 +5,7 @@ import hashlib
 import pytest
 
 from hashguard.canonical import (
+    MAX_SAFE_INT,
     CanonicalError,
     canonical_bytes,
     record_hash,
@@ -67,3 +68,33 @@ def test_canonical_form_is_compact_and_sorted():
 def test_short_or_malformed_digests_are_refused(bad):
     with pytest.raises(CanonicalError):
         unhexlify(bad)
+
+
+def test_integers_beyond_2_53_are_refused():
+    """The bound exists for the *other* implementation. JavaScript parses
+    9007199254740993 as 9007199254740992, so a record holding it would hash
+    differently in the console and the client could never verify their own
+    invoice. Refusing it here makes agreement a property of the format.
+
+    It is four orders of magnitude above anything HashGuard measures: 2^53
+    watt-hours is 9 PWh, 2^53 micro-euro is nine billion euro. A value that
+    reaches it is a bug, and failing on a bug beats signing it.
+    """
+    assert MAX_SAFE_INT == 2**53 - 1
+    assert canonical_bytes({"wh": MAX_SAFE_INT}) == b'{"wh":9007199254740991}'
+    assert canonical_bytes({"wh": -MAX_SAFE_INT}) == b'{"wh":-9007199254740991}'
+    for value in (2**53, -(2**53), 2**53 + 1, 2**64, -(2**70)):
+        with pytest.raises(CanonicalError) as caught:
+            canonical_bytes({"wh": value})
+        assert "2**53" in str(caught.value)
+    with pytest.raises(CanonicalError) as caught:
+        canonical_bytes({"day": {"records": [{"claimed_wh": 2**53}]}})
+    assert "$.day.records[0].claimed_wh" in str(caught.value), "the path must name the value"
+
+
+def test_booleans_are_not_measured_against_the_integer_bound():
+    """``isinstance(True, int)`` is True in Python. An implementation that
+    range-checks before it type-checks breaks every record in the ledger."""
+    assert canonical_bytes({"executed": True, "paused": False}) == (
+        b'{"executed":true,"paused":false}'
+    )

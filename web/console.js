@@ -16,6 +16,9 @@
  *    with WebCrypto, using none of the operator's code. That works only because
  *    the ledger contains no floating point: integers and strings serialise
  *    identically in Python and JavaScript, so both sides hash the same bytes.
+ *
+ * Where it cannot check something -- an ed25519 signature, or a commitment it
+ * would need the raw records for -- it says so and names what does.
  */
 
 "use strict";
@@ -30,65 +33,26 @@ let lastStatus = null;
 let calibrationBuilt = false;
 const calState = {};
 
-/* ───────────────────────── crypto ───────────────────────── */
+/* ────────────────────── crypto ─────────────────────── */
 
-async function sha256(bytes) {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-}
-
-async function sha256d(bytes) {
-  return sha256(await sha256(bytes));
-}
-
-function concat(a, b) {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
-
-function toHex(bytes) {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function fromHex(text) {
-  if (typeof text !== "string" || text.length !== 64 || !/^[0-9a-f]+$/.test(text)) return null;
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) out[i] = parseInt(text.substr(i * 2, 2), 16);
-  return out;
-}
-
-/* The canonical encoding, matching hashguard/canonical.py exactly: keys sorted,
-   no insignificant whitespace, UTF-8, and no floats anywhere. */
-function canonical(value) {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number") {
-    if (!Number.isInteger(value)) throw new Error("the canonical form admits no floats");
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-  if (typeof value === "object") {
-    const keys = Object.keys(value).sort();
-    return "{" + keys.map((k) => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
-  }
-  throw new Error("value has no canonical encoding");
-}
-
-const encoder = new TextEncoder();
-
-async function taggedHash(tag, bytes) {
-  return sha256d(concat(await sha256(encoder.encode(tag)), bytes));
-}
-
-async function recordHash(record) {
-  return taggedHash(SPEC + "/record", encoder.encode(canonical(record)));
-}
-
-async function nodeHash(left, right) {
-  return taggedHash(SPEC + "/node", concat(left, right));
-}
+/* The encoding and the hashes live in canonical.js, loaded by console.html
+   before this file. They are shared with tools/canonical_parity_node.js, which
+   runs the *same file* under Node and requires it to produce byte-for-byte the
+   same output as hashguard/canonical.py for a pinned corpus. Two
+   implementations of one encoding is a risk worth taking only while something
+   keeps proving they agree. */
+const {
+  canonical,
+  concat,
+  encoder,
+  fromHex,
+  nodeHash,
+  recordHash,
+  sha256,
+  sha256d,
+  taggedHash,
+  toHex,
+} = window.HashGuardCanonical;
 
 async function verifyInclusion(leaf, proof, root) {
   if (!leaf || !root) return false;
@@ -113,7 +77,7 @@ async function verifyInclusion(leaf, proof, root) {
 
 const GENESIS_PROMISE = sha256d(encoder.encode("hashguard/v2/genesis"));
 
-/* ───────────────────────── DOM helpers ───────────────────── */
+/* ────────────────────── DOM helpers ───────────────── */
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -136,7 +100,7 @@ function eur(micro) {
   return (value < 0 ? "-" : "") + "€" + Math.abs(value).toFixed(2);
 }
 
-/* ───────────────────────── transport ─────────────────────── */
+/* ────────────────────── transport ──────────────────── */
 
 async function api(path, options) {
   if (!AGENT) throw new Error("no agent configured");
@@ -157,7 +121,7 @@ async function api(path, options) {
   return response.json();
 }
 
-/* ───────────────────────── connection ────────────────────── */
+/* ────────────────────── connection ─────────────────── */
 
 function openSettings() {
   document.getElementById("agentUrl").value = AGENT;
@@ -204,7 +168,7 @@ function signOut() {
   openSettings();
 }
 
-/* ───────────────────────── polling ───────────────────────── */
+/* ────────────────────── polling ────────────────────── */
 
 function start() {
   poll();
@@ -227,7 +191,7 @@ async function poll() {
   }
 }
 
-/* ───────────────────────── rendering ─────────────────────── */
+/* ────────────────────── rendering ──────────────────── */
 
 function zColour(z, alertZ, criticalZ) {
   if (z === null || z === undefined || !isFinite(z)) return "var(--dead)";
@@ -403,7 +367,7 @@ async function sendFeedback(id, real) {
   }
 }
 
-/* ───────────────────────── the ledger ────────────────────── */
+/* ────────────────────── the ledger ─────────────────── */
 
 let currentStatement = null;
 
@@ -427,6 +391,7 @@ async function renderLedger() {
 
     const rows = [
       ["Month", statement.month, ""],
+      ["Farm", statement.farm_id ? statement.farm_id.slice(0, 16) + "…" : "not named (pre-2.1)", ""],
       ["Sealed days", String((statement.days || []).length), ""],
       ["Gross measured savings", eur(totals.gross_net_saving_micro_eur), ""],
       ["Billable after corroboration", eur(totals.billable_net_saving_micro_eur), ""],
@@ -501,6 +466,39 @@ async function verifyStatement() {
 
   check(statement.spec === SPEC, "The statement uses a spec version this console knows");
 
+  // 0. Which farm, and from which day the seals say so. A seal signed over a
+  //    message that names no farm can be presented as any farm's by anyone
+  //    holding the key; from the activation day the farm id is inside the
+  //    signed bytes. This page cannot check a signature, but it can check that
+  //    every day claims exactly the rule its date requires -- never both.
+  const activation = statement.activation;
+  const farmId = statement.farm_id || "";
+  let fromDay = null;
+  if (!activation) {
+    note(
+      "This statement predates farm-bound signatures. Its seals are signed over a message " +
+        "that names no farm, so a seal produced for another farm with the same key would " +
+        "look identical here. Ask for a statement from HashGuard 2.1 or later."
+    );
+  } else {
+    fromDay = activation.from_day || null;
+    check(
+      activation.kind === "activation/1",
+      "The activation entry is of a kind this console knows"
+    );
+    check(
+      !!farmId && activation.farm_id === farmId,
+      "The statement and its activation entry name the same farm",
+      `farm ${farmId.slice(0, 16)}… · seals name it from ${fromDay} onward`
+    );
+    if (statement.device && statement.device.farm_id) {
+      check(
+        statement.device.farm_id === farmId,
+        "The statement is for the farm its own device key names"
+      );
+    }
+  }
+
   // 1. The seals chain, day to day. A statement covers one month, so its first
   //    day usually chains to a seal from the month before: a real link, but not
   //    checkable from this document alone.
@@ -516,6 +514,14 @@ async function verifyStatement() {
       computed === day.seal_hash,
       `${day.day}: seal_hash = SHA256d(prev_seal ‖ merkle_root)`,
       "the same construction that chains Bitcoin block headers"
+    );
+    const declaredRule = Number(day.rule || 1);
+    const requiredRule = fromDay && day.day >= fromDay ? 2 : 1;
+    check(
+      declaredRule === requiredRule,
+      `${day.day}: sealed under the signature rule its date requires`,
+      `the seal declares rule ${declaredRule}, and farm-bound signatures begin ` +
+        `${fromDay || "never"}, so this day must be rule ${requiredRule}`
     );
     if (expectedPrev === null) {
       if (day.prev_seal === genesis) {
@@ -598,13 +604,48 @@ async function verifyStatement() {
     );
   }
 
-  // 4. Signatures. Ed25519 verification needs a library this page does not load,
+  // 4. Commitments. A claim is only worth something if the decision behind it
+  //    was fixed before the telemetry that corroborates it was read. This page
+  //    holds the statement, not the raw records, so it reports what the
+  //    statement declares and names what actually checks it -- rather than
+  //    dressing a self-report up as a verification.
+  const commitReveal = statement.commit_reveal;
+  if (!commitReveal) {
+    note(
+      "These records predate commit/reveal: nothing in them shows that a decision was fixed " +
+        "before the telemetry that corroborates it was read."
+    );
+  } else {
+    note(
+      `The statement reports ${commitReveal.revealed || 0} interval(s) whose decision was ` +
+        `committed before it ran, ${commitReveal.unrevealed || 0} unrevealed (restarts and day ` +
+        `boundaries) and ${commitReveal.mismatched || 0} mismatched. Recomputing those ` +
+        "commitments needs the raw records: run tools/hashguard_verify.py."
+    );
+    const notBilled = Number(commitReveal.pause_claims_not_billed_for_lack_of_a_reveal || 0);
+    if (notBilled) {
+      note(
+        `${notBilled} claimed pause(s) were measured but not billed, because the decision ` +
+          "behind them cannot be shown to predate the telemetry. That is the operator's loss."
+      );
+    }
+  }
+
+  // 5. Signatures. Ed25519 verification needs a library this page does not load,
   //    so say so rather than implying a check that did not happen.
   const device = statement.device || {};
+  if (!statement.signature) {
+    note(
+      "This statement is not signed as a whole (HashGuard before 2.1): the seals are signed, " +
+        "but the totals and proofs around them are not."
+    );
+  }
   if (device.verifiable_by_third_party) {
     note(
-      `Seals are ed25519-signed by device ${device.device_id}. This page checks structure and ` +
-        "arithmetic; run tools/hashguard_verify.py to also check the signatures."
+      `Seals are ed25519-signed by device ${device.device_id}` +
+        (farmId ? ` for farm ${farmId.slice(0, 16)}…` : "") +
+        ". This page checks structure and arithmetic; run tools/hashguard_verify.py to also " +
+        "check the signatures."
     );
   } else {
     note(
@@ -636,7 +677,7 @@ async function verifyStatement() {
   }
 }
 
-/* ───────────────────────── calibration ───────────────────── */
+/* ────────────────────── calibration ───────────────── */
 
 const CAL_FIELDS = [
   {
@@ -757,7 +798,7 @@ async function saveCalibration() {
   }
 }
 
-/* ───────────────────────── wiring ────────────────────────── */
+/* ────────────────────── wiring ─────────────────────── */
 
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnConnection").addEventListener("click", openSettings);

@@ -66,6 +66,23 @@ so* — in the startup banner, in the statement, and in the console — because 
 HMAC seal is only checkable by someone who could also forge one, and that
 difference should never be papered over.
 
+A signature says *who* sealed. It did not, until v2.1, say *which farm* the
+seal was for: the signed bytes named no farm, so one key file installed twice
+produced seals that were interchangeable between two sites. Each installation
+now mints a public `farm_id`, and from an activation day written into the
+ledger that id is inside the signed message — with the rule for any given day
+a pure function of the day and that activation day, so a day never has two
+valid readings and a day already sealed can never be re-signed under a
+different rule. The change is carried over from the first consensus change of
+[RAMI-Chain](https://github.com/baydounr01-blip/RAMI-Ledger), where the same
+hole (a testnet transaction valid byte for byte on another network) was closed
+the same way: put the network inside the signature, switch it on by date, and
+publish what the old version will and will not still understand.
+
+The statement is signed too, from v2.1. Signing the seals and not the document
+around them left the totals, the fee and the proofs a client is handed
+unattested — every seal would still verify after someone re-typed them.
+
 ### 4. A pause has to be visible in the physics — corroboration
 
 This is the part we think is genuinely new.
@@ -126,8 +143,13 @@ records, and report exactly where the arithmetic stops agreeing.
 It checks that the records chain, that none are missing, that each day's records
 reproduce the sealed root, that `seal_hash = SHA256d(prev_seal ‖ merkle_root)`,
 that the seals chain day to day, that every inclusion proof validates, that the
-signatures verify, and that the money adds up — including that no line bills
-more energy than the telemetry witnessed.
+signatures verify, that each day is sealed under exactly the signature rule its
+date requires, that the statement itself is signed, and that the money adds up —
+including that no line bills more energy than the telemetry witnessed.
+
+When it is handed a statement from before v2.1 it still passes it, and says
+which of those checks it could not make. A comparison that could not be made is
+not a comparison that passed.
 
 The console does a subset of the same work **in your browser**, with WebCrypto,
 using none of the operator's code. That is possible only because the ledger
@@ -142,6 +164,32 @@ float** rather than hashing one that another implementation might render
 differently. The fee is integer arithmetic with a stated rounding rule, and it
 rounds *down*, so every fraction of a micro-euro that rounding creates goes to
 the client.
+
+It also refuses any integer outside ±(2⁵³ − 1). That bound is about the browser,
+not the physics: JavaScript reads `9007199254740993` as `9007199254740992`, so a
+record holding such a value would hash differently in the console and the client
+could never verify their own invoice. The bound sits four orders of magnitude
+above anything a farm produces — 2⁵³ watt-hours is 9 PWh — so nothing real
+reaches it, and a value that does is a bug worth failing on.
+
+### Two encoders, kept in step
+
+`hashguard/canonical.py` and `web/canonical.js` are two implementations of one
+encoding, and that is deliberate: the console verifies the invoice using none
+of the operator's code, which means nothing unless both produce the same bytes.
+It is also a standing liability, so CI pins it down. `tests/vectors/canonical.json`
+holds, for sixteen awkward values, the exact bytes and the exact digest they
+must produce; the `parity` job hashes every one in Python and in Node — running
+`web/canonical.js` itself, the same file the browser loads — and requires the
+two to agree with each other *and* with the pin. Agreeing with each other alone
+would pass on the day both change the same wrong way.
+
+The corpus is chosen for the places the two languages part company: keys that
+look numeric (`"10"` sorts before `"9"`), every JSON escape, the characters that
+are *not* escaped (DEL, U+2028), and the code-point trap — `Array.prototype.sort`
+compares UTF-16 code units, so a default sort puts an emoji key before a
+private-use one and Python does not. Same content, two Merkle roots. The console
+sorts by code point.
 
 ---
 
@@ -158,6 +206,58 @@ test that fails if it is ever reopened. The threat model is in
 [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md); reporting is in
 [`SECURITY.md`](SECURITY.md).
 
+### The audit, replayed against your machine
+
+A document is a claim and a test suite runs against fixtures the same people
+wrote. Neither answers the question an operator has six months after
+installation, which is whether the defences are still standing *here*.
+
+```bash
+python3 -m hashguard --self-audit          # one verdict per finding
+python3 -m hashguard --self-audit --json   # the same, for a monitor
+python3 -m hashguard --self-audit --strict # a check that could not run fails
+```
+
+It starts the agent's own API on `127.0.0.1:0` and attacks it the way the v1
+findings were found: a hostile `Origin`, a config patch aimed at the fee, a URL
+pointing at the cloud metadata service, a lie in `Content-Length`, a miner that
+will not stop talking, wrong tokens until the door shuts. Then it checks the
+things that are not requests — file permissions, token shape, what the console
+page is allowed to execute, and whether this build matches a published digest.
+
+Three verdicts, and the third is the point. **PASS** means the probe ran and the
+defence held. **FAIL** means it ran and the defence did not. **NOT CHECKED**
+means the probe could not run here — no ledger yet, no published digest for this
+version — and it is printed in amber, never folded into PASS, and counted as a
+failure under `--strict`. A comparison that could not be made is not a
+comparison that passed.
+
+It never touches a relay, seals nothing, writes nothing to the ledger, and reads
+no miner. Its one outbound request is the digest lookup, through the same guard
+a price feed gets. Nothing it does can stop mining or change a bill.
+
+### Upgrades, checked against the version you already have
+
+A format is not what a specification says. It is what the released code
+actually writes and actually accepts. `tools/compat/roundtrip.sh` installs the
+published version and the working tree in two environments and makes them pass
+one ledger back and forth: the old version writes and seals a month, the new
+one verifies it, opens it, activates farm-bound signatures from a later day,
+appends its own days and states them — and then the *old* version verifies what
+the new one wrote.
+
+The assertion that matters is the last one. The old version must keep working
+and fail on exactly one thing: the signature of the days sealed under the new
+rule. Chain, Merkle roots, seal hashes and inclusion proofs all still have to
+pass, on records carrying fields it has never heard of. An old version that
+falls over on a new ledger, or one that accepts a day it cannot actually check,
+both fail the job. It runs in CI on every push.
+
+Writing this found a real defect: the verifier used to fail a pre-2.1 statement
+for "not being for the farm whose key you were given" when that statement names
+no farm at all. It is a NOTE now — *Test:
+`test_verifier.py::test_an_old_statement_and_an_upgraded_key_is_a_note_not_a_failure`.*
+
 Highlights of the posture:
 
 | | |
@@ -169,8 +269,10 @@ Highlights of the posture:
 | **Outbound** | price feeds must be HTTPS to a public address; relays must be allowlisted *and* private. Both DNS-pinned, no redirects, size-capped |
 | **Input** | every read bounded — request bodies, miner sockets, price responses, board counts |
 | **Secrets** | key and config files created `0600`; a loosened key file is refused, not warned about |
+| **Signatures** | bound to the farm from an activation day written into the ledger; the statement signed as a document, not only the seals inside it |
 | **Console** | strict CSP, no `innerHTML` from agent data, token in `sessionStorage` |
 | **Dependencies** | none. `cryptography` is optional, for ed25519 |
+| **Self-check** | `--self-audit` replays every v1 finding against the running agent and reports what it could *not* check separately from what passed |
 
 ### No runtime dependencies
 
@@ -223,9 +325,11 @@ Closed-loop it settles at 2.02σ against an ideal of 2.045.
 src/hashguard/
   canonical.py   the one encoding both parties hash; refuses floats
   merkle.py      Merkle roots, inclusion proofs, the bbu-style seal header
+  rules.py       which signature rule governs a day, and what each one signs
+  commit.py      commit/reveal: a decision is sealed before it is corroborated
   ledger.py      append-only records, daily seals, the monthly statement
   attest.py      the corroboration auditor (ported from bbu.signature, P12)
-  identity.py    ed25519 / HMAC device keys, 0600 and checked
+  identity.py    ed25519 / HMAC device keys, the farm id, 0600 and checked
   money.py       integer units and the fee arithmetic
   qtmp.py        the detection engine
   adaptive.py    the feedback controller
@@ -235,17 +339,25 @@ src/hashguard/
   ratelimit.py   progressive blocking, ported from quantumbot547
   config.py      typed schema and the narrow console-writable surface
   api.py         the HTTP surface
+  selfaudit.py   the v1 findings, replayed against the running agent
   agent.py       the loop and the CLI
 
 tools/hashguard_verify.py   the independent verifier (imports no HashGuard)
+tools/package_digest.py     the digest line a release publishes
+tools/compat/roundtrip.sh   the published version and this one, over one ledger
+tools/canonical_vectors.py  the pinned corpus the two encoders are held to
+web/canonical.js            the encoding and the hashes, shared by page and test
 web/                        console (strict CSP, in-browser verification)
 docs/AUDIT_v1.md            every v1 finding and its fix
 docs/THREAT_MODEL.md        what this defends against, and what it does not
+docs/PLAN_v2.1.md           what is being ported from RAMI-Chain, and how
+RELEASE_NOTES.md            what it costs, how it was checked, what is missing
+PENDING-v2.1.0.md           what was verified, how it is built, what is left
 ```
 
 ## Where this comes from
 
-Three repositories of the same author, joined here:
+Four repositories of the same author, joined here:
 
 - **[universal-timeline](https://github.com/baydounr01-blip/universal-timeline)** —
   the Universo de Bloques Ramificados. `bbu.merkle` supplies the SHA-256d
@@ -254,6 +366,13 @@ Three repositories of the same author, joined here:
   computed, not declared* — is the one this repository is built on.
 - **[quantumbot547](https://github.com/baydounr01-blip/quantumbot547)** — the
   QTMP engine and the progressive access limiter behind `ratelimit.py`.
+- **[RAMI-Chain](https://github.com/baydounr01-blip/RAMI-Ledger)** — a Rust
+  blockchain with a desktop wallet, and the source of the disciplines v2.1 is
+  built on: a signature bound to its network, activated by a date that is
+  written down rather than switched on; commit/reveal against look-ahead; a
+  wallet that attacks its own node and reports what it could not check; and a
+  round trip run against the *real* published binaries, because the format that
+  matters is the one they actually write.
 - **hashguard v1** — the product, the fail-safe curtailment design, and the
   sibling-comparison engine. All of it survives into v2; see the closing section
   of `docs/AUDIT_v1.md` for what it got right.

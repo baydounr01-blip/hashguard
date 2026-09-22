@@ -62,6 +62,93 @@ jobs:
           test -s ledger/records/*.jsonl
           echo "Degraded cleanly to HMAC and said so."
 
+  parity:
+    name: "the two canonical encoders, byte for byte"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install -e ".[test]"
+      - name: Python and Node must agree with each other and with the pins
+        run: pytest tests/test_parity.py -v
+      - name: The corpus must be exactly what the generator produces
+        run: |
+          set -e
+          # A pin edited by hand is a pin that agrees with whatever it was
+          # edited to match. Regenerating it must be a no-op.
+          python3 tools/canonical_vectors.py --print > /tmp/regenerated.json
+          diff -u tests/vectors/canonical.json /tmp/regenerated.json \
+            || { echo "tests/vectors/canonical.json is not what tools/canonical_vectors.py builds"; exit 1; }
+          echo "the pins are exactly what the generator produces."
+
+  compat:
+    name: "the published version and this one, over one ledger"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The round trip checks out the published version as a second git
+          # worktree, so the whole history has to be here.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Round trip against v2.0.0
+        run: bash tools/compat/roundtrip.sh
+
+  self-audit:
+    name: "the v1 findings, replayed against a running agent"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Run an agent long enough to have a ledger, then audit it
+        run: |
+          set -e
+          mkdir -p /tmp/hg-audit && cd /tmp/hg-audit
+          # A fresh install has no records, and AUDIT-05 would report NOT
+          # CHECKED rather than replay the tamper probe -- which is honest, and
+          # useless as a gate. Poll fast for half a minute so the check that
+          # matters most has a chain to break.
+          echo '{"poll_seconds": 5}' > config.json
+          timeout 32 python3 -u -m hashguard --demo > run.log 2>&1 || true
+          records=$(cat ledger/records/*.jsonl | wc -l)
+          echo "ledger holds $records records"
+          test "$records" -ge 2
+          # Stricter than --strict, and more useful: a check that could not
+          # run fails the build unless it is the one amber line we already
+          # know about by name. Today that is the release digest, which no tag
+          # publishes yet. Anything else going amber -- a ledger that stopped
+          # being readable, a web/ that moved -- is a regression in the audit's
+          # own reach and must not pass quietly.
+          set +e
+          python3 -m hashguard --self-audit --json > audit.json
+          code=$?
+          set -e
+          python3 - <<'PY'
+          import json, sys
+          report = json.load(open("audit.json"))
+          for check in report["checks"]:
+              print(f"{check['verdict']:<11} {check['finding']:<9} {check['claim']}")
+              print(f"            {'':<9} . {check['observed']}")
+          failed = [c["finding"] for c in report["checks"] if c["verdict"] == "FAIL"]
+          amber = [c["finding"] for c in report["checks"] if c["verdict"] == "NOT CHECKED"]
+          if failed:
+              sys.exit(f"self-audit failed: {failed}")
+          if set(amber) - {"build"}:
+              sys.exit(f"a check could not run, and it is not the known one: {amber}")
+          print(f"\nself-audit: {report['summary']}")
+          PY
+          exit $code
+
   end-to-end-verification:
     name: "an invoice verifies, and a tampered one does not"
     runs-on: ubuntu-latest

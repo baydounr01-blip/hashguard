@@ -39,6 +39,11 @@ a static page, and the token is the security boundary.*
 | AUDIT-19 | Quality | Adaptive thresholds could not recover | Fixed — proportional control with a dead band |
 | AUDIT-20 | Quality | numpy imported to compute medians | Fixed — no runtime dependencies at all |
 
+Four findings against **v2.0.0 itself**, found while building 2.1 and fixed
+there, are published at the end of this document under
+[Findings against v2.0.0](#findings-against-v200-found-while-building-21). An
+audit that only ever indicts the previous version is marketing.
+
 ---
 
 ## The findings
@@ -61,6 +66,9 @@ startup with an explanation, rather than accepted.
 *Tests: `test_security.py::test_wildcard_cors_is_refused`,
 `test_api.py::test_an_unlisted_origin_gets_nothing`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-01`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-02 · High · Server-side request forgery via the price feed
 
 ```python
@@ -79,6 +87,9 @@ link-local, reserved or multicast space, connects to the address it vetted
 caps the response at 512 KB. `price_url` is operator-only.
 *Tests: `test_security.py::test_price_feeds_cannot_be_aimed_inside_the_network`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-02`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-03 · High · Lateral movement via webhooks
 
 ```python
@@ -96,6 +107,9 @@ local-network action. The allowlist is operator-only, and `webhook` mode with
 an empty allowlist is refused at startup rather than silently doing nothing.
 *Tests: `test_security.py::test_a_webhook_host_must_be_on_the_allowlist`,
 `::test_a_webhook_may_not_point_at_the_public_internet`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-03`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-04 · High · The config endpoint accepted anything
 
@@ -117,6 +131,9 @@ editing `config.json` on the machine, which requires the one thing the threat
 model already assumes an attacker lacks.
 *Tests: `test_security.py::test_the_console_can_only_turn_the_calibration_knobs`,
 `test_api.py::test_the_console_cannot_change_the_fee_or_the_price_source`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-04`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-05 · High · The billing basis had no integrity
 
@@ -145,6 +162,9 @@ proofs, and `tools/hashguard_verify.py` re-derives every hash in it from the raw
 records without importing any HashGuard code.
 *Tests: all of `test_ledger.py`, `test_verifier.py`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-05`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-06 · High · Token authentication had no cost attached
 
 ```python
@@ -167,6 +187,9 @@ quantumbot547 repository, which guards that project's client access endpoint.
 *Tests: `test_security.py` rate-limiting section,
 `test_api.py::test_repeated_guessing_gets_blocked_with_a_retry_after`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-06`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-07 · Medium · Only the token was redacted
 
 ```python
@@ -183,6 +206,9 @@ also shallow, so nested mutations would have escaped.
 price-feed header value, and every webhook URL.
 *Test: `test_security.py::test_the_config_endpoint_redacts_every_secret`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-07`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-08 · High · Path traversal in `log_dir`
 
 ```python
@@ -197,6 +223,9 @@ directory-creation and file-append primitive with the agent's privileges.
 **v2.** Paths are operator-only, and `config.validate` refuses any that resolves
 outside the working directory.
 *Test: `test_security.py::test_paths_cannot_escape_the_working_directory`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-08`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-09 · Medium · Unbounded request body
 
@@ -214,6 +243,9 @@ body that is not a JSON object — and the connection is closed on the paths whe
 the body is never read, so a refusal cannot desynchronise a keep-alive
 connection.
 *Tests: `test_api.py::test_an_oversized_body_is_refused`, `::test_a_non_json_body_is_refused`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-09`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-10 · Medium · Unbounded read from the miner socket
 
@@ -236,6 +268,9 @@ boards and 16 fans parsed from a reply, and implausible temperatures and fan
 speeds discarded.
 *Tests: `test_collector.py`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-10`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-11 · High · Stored XSS in the console
 
 ```javascript
@@ -256,6 +291,9 @@ through `textContent` on a node built with `createElement`. A strict CSP is the
 backstop.
 *Enforced by `web/console.html`; see also the CSP notes in `docs/THREAT_MODEL.md`.*
 
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-11`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
+
 ### AUDIT-12 · Medium · Bound to `0.0.0.0` by default
 
 ```python
@@ -271,6 +309,9 @@ port.
 own settings dialog already recommended. Binding wider requires setting
 `api.i_understand_non_loopback_bind`, so it is a decision rather than a default.
 *Test: `test_security.py::test_binding_beyond_loopback_requires_saying_so`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-12`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-13 · Medium · Token in `localStorage`, no CSP
 
@@ -299,6 +340,9 @@ device key's permissions are re-checked on load and a loosened key is refused
 outright rather than used with a warning.
 *Tests: `test_security.py::test_key_files_are_written_owner_only`,
 `::test_a_world_readable_key_is_refused_not_warned_about`.*
+
+*Replayed live: `hashguard --self-audit` reports this finding as `AUDIT-14`,
+and `test_selfaudit.py` requires that line to go red if it is reopened.*
 
 ### AUDIT-15 · Low · The console gate
 
@@ -407,3 +451,101 @@ Worth recording, because v2 keeps all of it:
 * **Saying out loud that the console gate was not security.** That instinct, of
   naming the weak part rather than dressing it up, is the one this whole
   document is built on.
+
+---
+
+## Findings against v2.0.0, found while building 2.1
+
+Published here for the same reason the v1 findings are: the software was
+released, and anyone running 2.0.0 should know what they are running. Each is
+fixed in 2.1.0.
+
+### V2-01 · High · A seal named no farm
+
+A 2.0.0 seal is signed over a message containing the day, the Merkle root, the
+previous seal and the sealing time. Nothing in it says *which installation*
+produced it.
+
+So a key holder running two farms could present either farm's seals as the
+other's, and every check in the verifier would pass — the chain, the root, the
+seal hash and the signature would all be perfectly valid, for the wrong farm.
+The signature proved the seal came from that key. Nobody had ever asked it to
+prove what the client actually cares about, which is that the seal is *their*
+farm's.
+
+**2.1.** A farm id of 32 random bytes, minted once and stored beside the key,
+goes inside the signed message from an **activation day written into the ledger
+and signed**. Days before that day keep their old signatures byte for byte —
+re-signing history is the one thing this design exists to prevent — and the
+rule for a day is a pure function of the day and the activation day, so the
+ledger, both verifiers and the console can never disagree about it.
+*Tests: `test_rules.py::test_a_seal_signed_for_farm_a_does_not_verify_as_farm_b`,
+`::test_legacy_seals_are_byte_identical_to_v2_0_0`,
+`test_ledger.py::test_activation_cannot_rewrite_the_rule_of_a_sealed_day`,
+`test_verifier.py::test_a_statement_for_another_farm_is_refused`.*
+*Replayed live: this is what the `AUDIT-05` line of `hashguard --self-audit`
+verifies on the running ledger, and step 5 of `tools/compat/roundtrip.sh`
+checks that 2.0.0 keeps working and fails on exactly this.*
+
+### V2-02 · High · A decision could be written to fit the measurement
+
+2.0.0 wrote the mine/pause decision and the telemetry that corroborates it into
+the same record, at the same moment. Nothing in the file showed which came
+first.
+
+That matters because the corroboration check is what caps the bill: a pause is
+only billable to the extent the hashrate went dark. A farm that went dark for
+an unrelated reason — a tripped breaker, a pool outage, a failed PSU — could
+have a PAUSE decision written around the gap afterwards, and the record would
+be indistinguishable from an honest one. The ledger proved the record had not
+been edited *since* it was written. It could not prove anything about the order
+in which its own contents came to exist.
+
+**2.1.** Each poll publishes `sha256(canonical(decision) ‖ nonce)` for the
+interval it is *opening*, and reveals the nonce one record later. The
+commitment is on disk — and under the day's seal — a full poll before the
+hashrate that corroborates it is read. A reveal that does not reproduce its
+commitment is counted and **not billed**; an absent reveal, the ordinary result
+of a restart, is also not billed and is not an accusation.
+*Tests: `test_agent.py::test_the_poll_loop_commits_before_it_measures`,
+`test_commit.py`, `test_verifier.py::test_a_reveal_that_does_not_match_its_commit_fails_the_verifier`.*
+
+### V2-03 · Medium · The verifier trusted the statement's own totals
+
+`tools/hashguard_verify.py` in 2.0.0 checked that the statement's arithmetic
+was internally consistent: that the fee was the right percentage of the
+billable savings, that the fee plus what the client keeps equalled the
+billable savings, that a month that lost money was not billed.
+
+Every one of those checks compares the statement with itself. Inflate the gross
+savings, the billable savings and the fee together, consistently, and all of
+them still pass. The document is coherent; it is just not the document the
+records support.
+
+**2.1.** The verifier re-derives the bill from the raw records with the
+published integer formulas — energy, corroborated energy, billable energy,
+gross, billable and advisory savings, and the fee — and compares that against
+what the statement claims. The statement's totals are now an assertion to be
+checked, not an input.
+*Test: `test_verifier.py::test_an_inflated_billable_total_is_caught_even_when_the_arithmetic_closes`,
+which asserts that the recomputation checks are the only ones that catch it.*
+
+### V2-04 · Low · An upgraded key file made old invoices look wrong
+
+Found by `tools/compat/roundtrip.sh` on its first complete run, which is what
+that script is for.
+
+When a farm upgrades, its key file gains a farm id. A client re-checking an
+invoice from *before* the upgrade with the fresh `device_public.json` they were
+sent got a red line: "this statement is for the farm whose key you were given"
+— FAIL. But a pre-2.1 statement names no farm at all, so there was no
+disagreement to report; the key named something the statement was silent about.
+
+Low severity, and worth fixing anyway. A verifier that shows a red line on a
+correct document during an ordinary upgrade teaches its reader that red lines
+are normal, and that is how a verifier stops being read.
+
+**2.1.** It is a NOTE, and the note says what is missing: that the statement
+predates farm binding and cannot be tied to that key beyond the signature
+itself, which any ledger signed by this device would also satisfy.
+*Test: `test_verifier.py::test_an_old_statement_and_an_upgraded_key_is_a_note_not_a_failure`.*

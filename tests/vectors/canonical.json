@@ -1,0 +1,232 @@
+{
+  "note": "Pinned by tools/canonical_vectors.py. Every entry must encode to exactly these bytes and hash to exactly this digest, in hashguard/canonical.py and in web/canonical.js alike. Regenerate only on purpose: a moved pin is a change to the format every existing ledger was written in.",
+  "max_safe_int": 9007199254740991,
+  "entries": [
+    {
+      "name": "empty object",
+      "why": "the degenerate case both encoders have to get right",
+      "value": {},
+      "canonical": "{}",
+      "record_hash": "36606e741677abcbcace0f9e4851b6334d8d620dbcc09071464909024b651bce"
+    },
+    {
+      "name": "empty array",
+      "why": "an empty list is not null and not an empty object",
+      "value": [],
+      "canonical": "[]",
+      "record_hash": "566e0508fc8b43824f3e9df170041e1e8769340e516bcbba9fd8bf1874c85711"
+    },
+    {
+      "name": "scalars",
+      "why": "null, true and false must not be quoted or capitalised differently",
+      "value": {
+        "n": null,
+        "t": true,
+        "f": false
+      },
+      "canonical": "{\"f\":false,\"n\":null,\"t\":true}",
+      "record_hash": "45c0366f561755b3e6b5fadbfe8894dccde3f003863205108f1d646064b43219"
+    },
+    {
+      "name": "zero and negative zero",
+      "why": "JavaScript has -0 and Python does not; both must write 0",
+      "value": {
+        "zero": 0,
+        "neg": 0,
+        "one": 1,
+        "minus": -1
+      },
+      "canonical": "{\"minus\":-1,\"neg\":0,\"one\":1,\"zero\":0}",
+      "record_hash": "c889ffdb89bb43472ee54929d608f892b0cc2348c1362f857445acc09b57fb43"
+    },
+    {
+      "name": "the safe integer bound",
+      "why": "the last integers the two languages still agree about",
+      "value": {
+        "high": 9007199254740991,
+        "low": -9007199254740991
+      },
+      "canonical": "{\"high\":9007199254740991,\"low\":-9007199254740991}",
+      "record_hash": "a443c08cf1accd23e1478d969bbf437160f6c1a027012cb3c61f2378183f9f4f"
+    },
+    {
+      "name": "nesting",
+      "why": "arrays inside objects inside arrays, with no whitespace anywhere",
+      "value": {
+        "a": [
+          {
+            "b": [
+              1,
+              {
+                "c": []
+              }
+            ]
+          },
+          []
+        ],
+        "d": {
+          "e": {
+            "f": {}
+          }
+        }
+      },
+      "canonical": "{\"a\":[{\"b\":[1,{\"c\":[]}]},[]],\"d\":{\"e\":{\"f\":{}}}}",
+      "record_hash": "569c40c10b0893dd64a81aaaf4a4ce019b644c05bd1041378b12d9cf17e83b4d"
+    },
+    {
+      "name": "numeric-looking keys sort as strings",
+      "why": "\"10\" sorts before \"9\"; an encoder that sorts numerically disagrees",
+      "value": {
+        "9": 9,
+        "10": 10,
+        "1": 1,
+        "100": 100,
+        "2": 2
+      },
+      "canonical": "{\"1\":1,\"10\":10,\"100\":100,\"2\":2,\"9\":9}",
+      "record_hash": "30d5df73884d8aa214ec1bd5d31b00d85b7a5d70ee33f1fc501cf865d2f72d37"
+    },
+    {
+      "name": "ascii key order",
+      "why": "uppercase sorts before lowercase, and '_' before lowercase letters",
+      "value": {
+        "b": 1,
+        "A": 2,
+        "a": 3,
+        "_": 4,
+        "B": 5,
+        "-": 6,
+        "0": 7
+      },
+      "canonical": "{\"-\":6,\"0\":7,\"A\":2,\"B\":5,\"_\":4,\"a\":3,\"b\":1}",
+      "record_hash": "5f1a76a473dc9d6aa38c41f34d9a0b81e4e1c62e9b9a463d7de440ca4a016165"
+    },
+    {
+      "name": "unicode key order",
+      "why": "accented and non-latin keys sort by code point, not by locale",
+      "value": {
+        "é": 1,
+        "e": 2,
+        "z": 3,
+        "ä": 4,
+        "Z": 5,
+        "日": 6,
+        "ж": 7
+      },
+      "canonical": "{\"Z\":5,\"e\":2,\"z\":3,\"ä\":4,\"é\":1,\"ж\":7,\"日\":6}",
+      "record_hash": "fd4a059df4b7e5f1ebbca03cfaa1d272cc666565fa7b5c4e024df7d57c5f41ca"
+    },
+    {
+      "name": "the code-point trap",
+      "why": "U+1F600 is above U+FFFF and sorts *after* U+E000 by code point, but its UTF-16 lead unit 0xD83D sorts *before* it. A JavaScript sort() that compares code units puts these two keys the other way round",
+      "value": {
+        "😀": "astral",
+        "": "private use",
+        "￿": "bmp end"
+      },
+      "canonical": "{\"\":\"private use\",\"￿\":\"bmp end\",\"😀\":\"astral\"}",
+      "record_hash": "bef67bde50f23075c7f1da1d69b83bc54a08844c52f55937acf8ca056d1bb2d7"
+    },
+    {
+      "name": "every json escape",
+      "why": "\\b \\t \\n \\f \\r get short forms; other controls get \\u00xx",
+      "value": {
+        "quote": "\"",
+        "backslash": "\\",
+        "solidus": "/",
+        "backspace": "\b",
+        "formfeed": "\f",
+        "newline": "\n",
+        "carriage": "\r",
+        "tab": "\t",
+        "null byte": "\u0000",
+        "unit separator": "\u001f"
+      },
+      "canonical": "{\"backslash\":\"\\\\\",\"backspace\":\"\\b\",\"carriage\":\"\\r\",\"formfeed\":\"\\f\",\"newline\":\"\\n\",\"null byte\":\"\\u0000\",\"quote\":\"\\\"\",\"solidus\":\"/\",\"tab\":\"\\t\",\"unit separator\":\"\\u001f\"}",
+      "record_hash": "79ca7e206f850410fcc9286192aa40601383f868fb78fa54b9ca2a2893a4511e"
+    },
+    {
+      "name": "characters that are not escaped",
+      "why": "DEL, U+2028 and U+2029 are written raw by both encoders. They look like they ought to be escaped and are not, which is exactly why they are pinned",
+      "value": {
+        "del": "",
+        "ls": " ",
+        "ps": " ",
+        "nbsp": " "
+      },
+      "canonical": "{\"del\":\"\",\"ls\":\" \",\"nbsp\":\" \",\"ps\":\" \"}",
+      "record_hash": "e03dc08df4b1ff645f5ac90e3ab9fe202f6303e6e31dfeccf17b4d27f6d21879"
+    },
+    {
+      "name": "non-bmp text",
+      "why": "a character outside the BMP is one code point and two UTF-16 units",
+      "value": {
+        "emoji": "🔐 😀",
+        "cjk ext": "𠀀"
+      },
+      "canonical": "{\"cjk ext\":\"𠀀\",\"emoji\":\"🔐 😀\"}",
+      "record_hash": "eaf450d7cd8e21b2a090425151157e8a0ff65befae6c1600aefb7c94a652cc13"
+    },
+    {
+      "name": "strings that look like other types",
+      "why": "a quoted number must stay quoted on both sides",
+      "value": {
+        "a": "1",
+        "b": "true",
+        "c": "null",
+        "d": "0.1",
+        "e": "1e5",
+        "f": "-0"
+      },
+      "canonical": "{\"a\":\"1\",\"b\":\"true\",\"c\":\"null\",\"d\":\"0.1\",\"e\":\"1e5\",\"f\":\"-0\"}",
+      "record_hash": "66ad0ad8aeb1e11954e180b5d0d5ec4d2c4cbc7bdf1b589284dd4cbd250c11c7"
+    },
+    {
+      "name": "a ledger record",
+      "why": "the shape actually hashed into a Merkle leaf, with commit and reveal",
+      "value": {
+        "action": "PAUSE",
+        "at": "2026-09-14T08:00:00Z",
+        "baseline_gh": 400000,
+        "breakeven_ppm_per_kwh": 57000,
+        "claimed_mining_lost_micro_eur": 619200,
+        "claimed_wh": 48000,
+        "commit": "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+        "day": "2026-09-14",
+        "executed": true,
+        "n_miners": 4,
+        "observed_gh": 0,
+        "opened": "2026-09-14T04:00:00Z",
+        "prev": "0000000000000000000000000000000000000000000000000000000000000000",
+        "price_curve_hash": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+        "price_ppm_per_kwh": 210000,
+        "reveal": {
+          "commit_seq": 41,
+          "nonce": "abababababababababababababababababababababababababababababababab"
+        },
+        "seconds": 14400,
+        "seq": 42,
+        "spec": "hashguard-ledger/2"
+      },
+      "canonical": "{\"action\":\"PAUSE\",\"at\":\"2026-09-14T08:00:00Z\",\"baseline_gh\":400000,\"breakeven_ppm_per_kwh\":57000,\"claimed_mining_lost_micro_eur\":619200,\"claimed_wh\":48000,\"commit\":\"7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f\",\"day\":\"2026-09-14\",\"executed\":true,\"n_miners\":4,\"observed_gh\":0,\"opened\":\"2026-09-14T04:00:00Z\",\"prev\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"price_curve_hash\":\"3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c\",\"price_ppm_per_kwh\":210000,\"reveal\":{\"commit_seq\":41,\"nonce\":\"abababababababababababababababababababababababababababababababab\"},\"seconds\":14400,\"seq\":42,\"spec\":\"hashguard-ledger/2\"}",
+      "record_hash": "84b5e79856a6bd1336b9156a56520c79448ced044caccb5c98fe4a936108dbdf"
+    },
+    {
+      "name": "a seal body",
+      "why": "what the device signature is computed over",
+      "value": {
+        "day": "2026-09-14",
+        "farm_id": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "leaf_count": 6,
+        "merkle_root": "1111111111111111111111111111111111111111111111111111111111111111",
+        "prev_seal": "2222222222222222222222222222222222222222222222222222222222222222",
+        "rule": 2,
+        "seal_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "sealed_at": "2026-09-15T00:00:12Z",
+        "spec": "hashguard-ledger/2"
+      },
+      "canonical": "{\"day\":\"2026-09-14\",\"farm_id\":\"5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e\",\"leaf_count\":6,\"merkle_root\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"prev_seal\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"rule\":2,\"seal_hash\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"sealed_at\":\"2026-09-15T00:00:12Z\",\"spec\":\"hashguard-ledger/2\"}",
+      "record_hash": "353b10a30b7fff9de7c36c2e91b8a2b57dcff28a437bd976f16cb35d869ad874"
+    }
+  ]
+}

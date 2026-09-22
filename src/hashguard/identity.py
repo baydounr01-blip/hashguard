@@ -19,6 +19,15 @@ Two backends, one interface:
 
 The key file is created ``0600`` and its permissions are re-checked on every
 load; a key that became world-readable is refused, not used with a warning.
+
+The identity also carries the **farm id**: 32 random bytes minted once, stored
+next to the key and published with the public half. A signing key says *who*
+sealed; the farm id says *which farm* the seal is for, and from the activation
+day (see :mod:`hashguard.rules`) it is inside every signed message. It is not
+a secret -- the client is meant to know it and compare it out of band -- but
+it lives in the key file so that the two are provisioned, backed up and
+rotated together. A v2.0.0 key file has none; it is given one on first load
+and rewritten ``0600``.
 """
 
 from __future__ import annotations
@@ -102,6 +111,7 @@ class DeviceIdentity:
     device_id: str          # public fingerprint, safe to print anywhere
     public_key_b64: str     # ed25519 public key, or "" for hmac
     _secret: bytes
+    farm_id: str = ""       # 32 bytes hex; public, compared out of band
 
     # -- lifecycle -------------------------------------------------------
 
@@ -111,9 +121,9 @@ class DeviceIdentity:
             private = Ed25519PrivateKey.generate()
             raw = private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
             public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-            return cls("ed25519", _fingerprint(public), _b64(public), raw)
+            return cls("ed25519", _fingerprint(public), _b64(public), raw, mint_farm_id())
         secret = secrets.token_bytes(32)
-        return cls("hmac-sha256", _fingerprint(secret), "", secret)
+        return cls("hmac-sha256", _fingerprint(secret), "", secret, mint_farm_id())
 
     @classmethod
     def load_or_create(cls, path: str = "device_key.json") -> "DeviceIdentity":
@@ -129,12 +139,20 @@ class DeviceIdentity:
                     f"{path} holds an ed25519 key but the 'cryptography' package is "
                     "not installed. Install it rather than silently downgrading."
                 )
-            return cls(
+            identity = cls(
                 algorithm,
                 data["device_id"],
                 data.get("public_key_b64", ""),
                 _unb64(data["secret_b64"]),
+                data.get("farm_id") or "",
             )
+            if not is_farm_id(identity.farm_id):
+                # A v2.0.0 key file. Give it a farm id and write it back, 0600,
+                # so that from here on the key and the farm travel together.
+                identity.farm_id = mint_farm_id()
+                identity.save(path)
+                print(f"[identity] {path} had no farm id; minted {identity.farm_id[:16]}... and stored it")
+            return identity
         identity = cls.generate()
         identity.save(path)
         return identity
@@ -147,6 +165,7 @@ class DeviceIdentity:
                 "device_id": self.device_id,
                 "public_key_b64": self.public_key_b64,
                 "secret_b64": _b64(self._secret),
+                "farm_id": self.farm_id,
                 "note": "Private key material. Never commit, never share, mode 0600.",
             },
         )
@@ -165,8 +184,24 @@ class DeviceIdentity:
             "algorithm": self.algorithm,
             "device_id": self.device_id,
             "public_key_b64": self.public_key_b64,
+            "farm_id": self.farm_id,
             "verifiable_by_third_party": self.algorithm == "ed25519",
         }
+
+
+def mint_farm_id() -> str:
+    """32 random bytes, hex. Minted once per farm and never derived from the
+    key, so two farms provisioned from one copied key file still differ."""
+    return secrets.token_bytes(32).hex()
+
+
+def is_farm_id(value) -> bool:
+    if not isinstance(value, str) or len(value) != 64:
+        return False
+    try:
+        return len(bytes.fromhex(value)) == 32
+    except ValueError:
+        return False
 
 
 def _fingerprint(material: bytes) -> str:

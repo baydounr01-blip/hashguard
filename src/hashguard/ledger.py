@@ -23,6 +23,18 @@ Three layers of protection, each answering a different attack:
 3. **Device signature over each seal** -- catches fabrication. A consistent
    chain of invented numbers is easy; a consistent chain of invented numbers
    signed by a key that lives only on the client's own machine is not.
+4. **The farm inside the signed message** (new in v2.1) -- catches a seal
+   being moved between farms. A v2.0.0 signature covers a body that names no
+   farm, so one key file installed twice signs seals that are interchangeable.
+   From the activation day the message carries the farm id; see
+   :mod:`hashguard.rules` for the rule and why it is written down rather than
+   switched on.
+5. **Commit before the evidence** (new in v2.1) -- catches a decision written
+   to fit a measurement. Each record carries the commitment of the decision
+   that governs the interval it opens, and the next record reveals it; see
+   :mod:`hashguard.commit`. Without it, a farm dark for an unrelated reason
+   could be claimed as a pause after the fact, and the corroboration cap would
+   wave it through.
 
 Nothing here trusts the operator, and nothing here trusts the client. That is
 the point: the arrangement is *checkable*, so neither party has to be trusted.
@@ -33,9 +45,10 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from .attest import DEFAULT_MARGIN_PPM, Claim, SavingsAuditor
+from .commit import REVEALED, reveal_state, tally
 from .canonical import (
     SPEC,
     CanonicalError,
@@ -44,13 +57,27 @@ from .canonical import (
     record_hash,
     unhexlify,
 )
-from .identity import DeviceIdentity
+from .identity import DeviceIdentity, is_farm_id
 from .merkle import GENESIS_SEAL, SealHeader, build_proof, merkle_root
 from .money import (
     DEFAULT_FEE_BP,
     client_keeps_micro_eur,
     energy_cost_micro_eur,
     fee_micro_eur,
+)
+from .rules import (
+    ACTIVATION_KIND,
+    SEAL_RULE_FARM_BOUND,
+    SEAL_RULE_LEGACY,
+    RuleError,
+    activation_body,
+    activation_message,
+    check_day,
+    declared_rule,
+    seal_body_for_signing,
+    seal_message,
+    seal_rule_for,
+    statement_message,
 )
 
 #: The fields of a record, in the order this module writes them. Documented
@@ -60,6 +87,11 @@ RECORD_FIELDS = (
     "spec", "seq", "day", "ts", "prev", "device_id", "action", "executed",
     "n_miners", "seconds", "price_ppm_per_kwh", "breakeven_ppm_per_kwh",
     "claimed_wh", "claimed_mining_lost_micro_eur", "baseline_gh", "observed_gh",
+    # New in v2.1, see :mod:`hashguard.commit`. A record describes the interval
+    # that just closed (``opened`` .. ``ts``) and carries the ``commit`` of the
+    # one that just opened, so a decision is on disk before the telemetry that
+    # corroborates it is read.
+    "opened", "commit", "reveal", "price_curve_hash",
 )
 
 
@@ -114,6 +146,14 @@ class Interval:
     baseline_gh: int | None
     observed_gh: int | None
 
+    # -- commit/reveal (v2.1). Defaults keep every v2.0.0 construction of this
+    # dataclass working; a record written without them is simply *legacy*, and
+    # the ledger says so rather than pretending it was committed.
+    opened: str | None = None            # when the interval described here began
+    commit: str | None = None            # commitment for the interval opening now
+    reveal: dict | None = None           # {"commit_seq": int, "nonce": hex} for this one
+    price_curve_hash: str | None = None  # digest of the curve the decision came from
+
 
 class GuardedLedger:
     """Append-only ledger rooted at ``base_dir``."""
@@ -124,6 +164,7 @@ class GuardedLedger:
         base_dir: str = "ledger",
         fee_bp: int = DEFAULT_FEE_BP,
         margin_ppm: int = DEFAULT_MARGIN_PPM,
+        activate_from: str | None = None,
     ) -> None:
         self.identity = identity
         self.base_dir = base_dir
@@ -131,8 +172,92 @@ class GuardedLedger:
         self.margin_ppm = margin_ppm
         self.records_dir = os.path.join(base_dir, "records")
         self.seals_path = os.path.join(base_dir, "seals.jsonl")
+        self.activation_path = os.path.join(base_dir, "activation.json")
         os.makedirs(self.records_dir, exist_ok=True)
+        self.activation = self._load_or_write_activation(
+            activate_from or os.environ.get("HASHGUARD_ACTIVATE_FROM") or None
+        )
         self._seq, self._prev = self._resume()
+
+    # -- the signature rule ----------------------------------------------
+
+    @property
+    def activated_from(self) -> str | None:
+        """The day farm-bound seals begin, or ``None`` for a ledger that has
+        none (which is every v2.0.0 ledger, and every ledger this version
+        opens read-only)."""
+        return self.activation["from_day"] if self.activation else None
+
+    def rule_for(self, day: str) -> int:
+        return seal_rule_for(day, self.activated_from)
+
+    def _load_or_write_activation(self, activate_from: str | None) -> dict | None:
+        """Read the activation entry, or write it the first time.
+
+        Ported from RAMI-Chain's ``Params.firma_v2_desde``: the day is written
+        down once, in the ledger, signed, and every reader derives the rule for
+        a day from it. What RAMI gets from consensus parameters shared across a
+        network, a single-farm ledger gets from a file it carries with it.
+
+        ``activate_from`` (or ``HASHGUARD_ACTIVATE_FROM``) forces the day, as
+        RAMI's ``--firma-v2-desde`` does for regtest. It is refused if it would
+        change the rule of a day that is already sealed: a sealed day's rule
+        never moves, which is the property that stops anyone back-dating their
+        way into the weaker format.
+        """
+        farm_id = self.identity.farm_id
+        if os.path.exists(self.activation_path):
+            try:
+                with open(self.activation_path, encoding="utf-8") as handle:
+                    entry = json.load(handle)
+            except (OSError, json.JSONDecodeError) as exc:
+                raise LedgerError(f"cannot read {self.activation_path}: {exc}") from exc
+            if entry.get("kind") != ACTIVATION_KIND:
+                raise LedgerError(
+                    f"{self.activation_path} is not an activation entry (kind {entry.get('kind')!r})"
+                )
+            try:
+                check_day(entry.get("from_day"))
+            except RuleError as exc:
+                raise LedgerError(f"{self.activation_path}: {exc}") from exc
+            if entry.get("farm_id") != farm_id:
+                raise LedgerError(
+                    f"{self.activation_path} was activated for farm "
+                    f"{str(entry.get('farm_id'))[:16]}... but this device carries "
+                    f"{farm_id[:16]}...; refusing to write into another farm's ledger"
+                )
+            if activate_from and check_day(activate_from) != entry["from_day"]:
+                raise LedgerError(
+                    f"this ledger is already activated from {entry['from_day']}; "
+                    f"{activate_from} would change the rule of days already written"
+                )
+            return entry
+        if not is_farm_id(farm_id):
+            # Cannot bind a seal to a farm that has no identifier. Rather than
+            # inventing one here, stay on the legacy rule and say nothing was
+            # activated: every day is rule 1 and the ledger is exactly v2.0.0.
+            return None
+        from_day = check_day(activate_from) if activate_from else date.today().isoformat()
+        sealed = [s["day"] for s in self.seals()]
+        if sealed and from_day <= max(sealed):
+            raise LedgerError(
+                f"cannot activate from {from_day}: {max(sealed)} is already sealed under "
+                "the rule in force then, and a sealed day's rule never changes"
+            )
+        body = activation_body(
+            farm_id,
+            self.identity.device_id,
+            from_day,
+            datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        )
+        body["signature"] = self.identity.sign(activation_message(farm_id, body))
+        body["algorithm"] = self.identity.algorithm
+        with open(self.activation_path, "w", encoding="utf-8") as handle:
+            json.dump(body, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        return body
 
     # -- writing ---------------------------------------------------------
 
@@ -167,6 +292,13 @@ class GuardedLedger:
             "claimed_mining_lost_micro_eur": int(interval.claimed_mining_lost_micro_eur),
             "baseline_gh": None if interval.baseline_gh is None else int(interval.baseline_gh),
             "observed_gh": None if interval.observed_gh is None else int(interval.observed_gh),
+            "opened": interval.opened or None,
+            "commit": interval.commit,
+            "reveal": None if interval.reveal is None else {
+                "commit_seq": int(interval.reveal["commit_seq"]),
+                "nonce": str(interval.reveal["nonce"]),
+            },
+            "price_curve_hash": interval.price_curve_hash,
         }
         canonical_bytes(record)  # refuses to store anything it cannot hash
         _append_line(os.path.join(self.records_dir, f"{record['day']}.jsonl"), record)
@@ -176,8 +308,30 @@ class GuardedLedger:
 
     # -- reading ---------------------------------------------------------
 
+    @property
+    def next_seq(self) -> int:
+        """The sequence number the next record will carry. A reveal names its
+        predecessor by seq, and the predecessor is always ``next_seq - 1``."""
+        return self._seq
+
     def day_records(self, day: str) -> list[dict]:
         return _read_lines(os.path.join(self.records_dir, f"{day}.jsonl"))
+
+    def record_before(self, day: str) -> dict | None:
+        """The record immediately preceding this day's first one.
+
+        The first record of a day reveals a commitment written in the last
+        record of the day before, which lives in another file. A reader that
+        does not cross that boundary would call one interval a day unrevealed
+        for no reason -- and, since billing fails closed, would silently stop
+        billing it.
+        """
+        try:
+            previous = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+        except ValueError:
+            return None
+        records = self.day_records(previous)
+        return records[-1] if records else None
 
     def days(self) -> list[str]:
         return sorted(
@@ -228,7 +382,15 @@ class GuardedLedger:
             "seal_hash": hexlify(header.seal_hash),
             "corroboration": auditor.report(),
         }
-        body["signature"] = self.identity.sign(canonical_bytes(body))
+        # Which rule governs this day is decided once, from the day and the
+        # activation entry, so the ledger, both verifiers and the console reach
+        # the same verdict. A day before activation is sealed exactly as
+        # v2.0.0 sealed it -- same keys, same bytes, same signature.
+        rule = self.rule_for(day)
+        if rule == SEAL_RULE_FARM_BOUND:
+            body["rule"] = SEAL_RULE_FARM_BOUND
+            body["farm_id"] = self.identity.farm_id
+        body["signature"] = self.identity.sign(seal_message(rule, self.identity.farm_id, body))
         body["algorithm"] = self.identity.algorithm
         _append_line(self.seals_path, body)
         return body
@@ -255,13 +417,25 @@ class GuardedLedger:
         advisory_micro = 0
         proof_targets: list[tuple[str, int]] = []
 
+        uncommitted_claims = 0
+        states_by_month: list[str] = []
+
         for seal in self.seals():
             if not seal["day"].startswith(month):
                 continue
             records = self.day_records(seal["day"])
+            # From the activation day a claim has to have been committed before
+            # the interval it describes ran. Before it, records predate the rule
+            # and bill exactly as v2.0.0 billed them.
+            require_reveal = self.rule_for(seal["day"]) == SEAL_RULE_FARM_BOUND
+            previous = self.record_before(seal["day"])
+            day_states: list[str] = []
             day_billable = 0
             day_gross = 0
             for index, r in enumerate(records):
+                state = reveal_state(r, previous)
+                day_states.append(state)
+                previous = r
                 if r["action"] != "PAUSE":
                     continue
                 claimed_energy = energy_cost_micro_eur(r["claimed_wh"], r["price_ppm_per_kwh"])
@@ -270,6 +444,12 @@ class GuardedLedger:
                     advisory_micro += claimed_net
                     continue
                 day_gross += claimed_net
+                if require_reveal and state != REVEALED:
+                    # Measured, shown, and not billed: a claim whose decision
+                    # cannot be shown to predate its own corroboration is our
+                    # problem, not the client's.
+                    uncommitted_claims += 1
+                    continue
                 claim = Claim(r["seq"], r["claimed_wh"], r["baseline_gh"], r["observed_gh"])
                 billable_wh = auditor.submit(claim)
                 if billable_wh <= 0:
@@ -284,15 +464,18 @@ class GuardedLedger:
                     proof_targets.append((seal["day"], index))
             gross_micro += day_gross
             billable_micro += day_billable
+            states_by_month.extend(day_states)
             days.append(
                 {
                     "day": seal["day"],
+                    "commit_reveal": tally(day_states),
                     "seal_hash": seal["seal_hash"],
                     "prev_seal": seal["prev_seal"],
                     "merkle_root": seal["merkle_root"],
                     "leaf_count": seal["leaf_count"],
                     "signature": seal["signature"],
                     "algorithm": seal["algorithm"],
+                    "rule": declared_rule(seal),
                     "corroboration": seal["corroboration"],
                     "gross_net_saving_micro_eur": day_gross,
                     "billable_net_saving_micro_eur": day_billable,
@@ -313,14 +496,20 @@ class GuardedLedger:
             )
 
         fee = fee_micro_eur(billable_micro, self.fee_bp)
-        return {
+        statement = {
             "spec": SPEC,
             "month": month,
             "device": self.identity.public(),
+            "farm_id": self.identity.farm_id,
+            "activation": self.activation,
             "fee_bp": self.fee_bp,
             "margin_ppm": self.margin_ppm,
             "days": days,
             "corroboration": auditor.report(),
+            "commit_reveal": {
+                **tally(states_by_month),
+                "pause_claims_not_billed_for_lack_of_a_reveal": uncommitted_claims,
+            },
             "totals": {
                 "gross_net_saving_micro_eur": gross_micro,
                 "billable_net_saving_micro_eur": billable_micro,
@@ -335,6 +524,16 @@ class GuardedLedger:
                 "It imports nothing from HashGuard; read it, it is one file."
             ),
         }
+        # The statement itself is signed from v2.1. Until now only the seals
+        # were, so the totals, the fee and the proofs a client was handed could
+        # be re-typed by anyone between the farm and the invoice -- the seals
+        # would still verify and the document around them was unattested.
+        if is_farm_id(self.identity.farm_id):
+            statement["signature"] = self.identity.sign(
+                statement_message(self.identity.farm_id, statement)
+            )
+            statement["algorithm"] = self.identity.algorithm
+        return statement
 
 
 # -- verification, usable without ever having written a record -------------
@@ -364,8 +563,20 @@ def verify_chain(records: list[dict]) -> tuple[bool, str]:
     return True, f"{len(records)} records chained"
 
 
-def verify_seal(seal: dict, records: list[dict], public: dict | None = None) -> tuple[bool, str]:
-    """Does this seal actually seal these records, and was it signed?"""
+def verify_seal(
+    seal: dict,
+    records: list[dict],
+    public: dict | None = None,
+    from_day: str | None = None,
+) -> tuple[bool, str]:
+    """Does this seal actually seal these records, and was it signed?
+
+    ``from_day`` is the activation day. Given it, the seal's declared rule must
+    be the one that day requires -- a legacy seal on or after activation and a
+    farm-bound seal before it are both refused, so a day never has two valid
+    readings. Omit it and the seal is judged under whichever rule it declares,
+    which is what a reader holding no activation entry can honestly do.
+    """
     from .identity import verify_signature
 
     leaves = [record_hash(r) for r in records]
@@ -377,8 +588,32 @@ def verify_seal(seal: dict, records: list[dict], public: dict | None = None) -> 
     header = SealHeader(prev_seal=unhexlify(seal["prev_seal"]), merkle_root=root)
     if hexlify(header.seal_hash) != seal["seal_hash"]:
         return False, "seal_hash is not SHA256d(prev_seal || merkle_root)"
+    try:
+        rule = declared_rule(seal)
+    except RuleError as exc:
+        return False, str(exc)
+    if from_day is not None:
+        required = seal_rule_for(seal["day"], from_day)
+        if rule != required:
+            return False, (
+                f"{seal['day']} is sealed under rule {rule}, but farm-bound signatures were "
+                f"activated from {from_day}, so it must be rule {required}"
+            )
+    farm_id = seal.get("farm_id")
+    if rule == SEAL_RULE_FARM_BOUND and public is not None:
+        expected = public.get("farm_id")
+        if expected and expected != farm_id:
+            return False, (
+                f"this seal is bound to farm {str(farm_id)[:16]}..., and the key you were "
+                f"given belongs to farm {str(expected)[:16]}..."
+            )
     if public is not None:
-        body = {k: v for k, v in seal.items() if k not in ("signature", "algorithm")}
-        if not verify_signature(public, canonical_bytes(body), seal["signature"]):
+        body = seal_body_for_signing(seal)
+        try:
+            message = seal_message(rule, farm_id, body)
+        except RuleError as exc:
+            return False, str(exc)
+        if not verify_signature(public, message, seal["signature"]):
             return False, "signature does not verify against the device key"
-    return True, "sealed and signed"
+    label = "sealed and signed" if rule == SEAL_RULE_LEGACY else "sealed and signed for this farm"
+    return True, label

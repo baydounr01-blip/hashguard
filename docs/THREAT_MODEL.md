@@ -39,6 +39,24 @@ to be trusted.
 - **Fabricating history is detectable.** Seals are signed by a device key. An
   attacker who rewrites records *and* recomputes the Merkle root still cannot
   produce a valid signature without the key.
+- **A seal cannot be moved between farms.** Every installation mints a
+  `farm_id`: 32 random bytes, public, stored beside the device key and printed
+  at startup. From the activation day written into `ledger/activation.json`,
+  the farm id is *inside* the bytes a seal signature covers, so one key file
+  installed on two farms no longer produces interchangeable seals. Which rule
+  governs a day is a pure function of the day and the activation day, so a day
+  never has two valid readings, and a day already sealed can never have its
+  rule changed by a later activation.
+  *Tests: `test_rules.py::test_a_seal_signed_for_farm_a_does_not_verify_as_farm_b`,
+  `test_ledger.py::test_a_ledger_crossing_the_activation_date_seals_each_day_under_exactly_one_rule`,
+  `::test_activation_cannot_rewrite_the_rule_of_a_sealed_day`.*
+- **The invoice document is signed, not just the seals inside it.** v2.0.0
+  signed each day's seal but nothing around it, so the totals, the fee and the
+  inclusion proofs a client was handed could be re-typed in transit while every
+  seal still verified. The statement now carries its own signature over
+  everything except its presentational fields.
+  *Test: `test_ledger.py::test_the_statement_is_signed_over_its_own_totals`,
+  `test_verifier.py::test_the_statement_signature_is_checked`.*
 - **A single line is checkable in isolation.** Inclusion proofs mean verifying
   one invoice line needs a 32-byte root and ~15 hashes, not the whole month.
 - **The arithmetic is reproducible.** Integers in declared minor units, and a
@@ -67,6 +85,23 @@ to be trusted.
   board and fan counts, log directory size.
 - **Secrets are `0600` from the first byte**, and a device key whose permissions
   have loosened is refused rather than used with a warning.
+- **The defences can be re-tested on the machine they are running on.**
+  `hashguard --self-audit` replays every finding in `docs/AUDIT_v1.md` against a
+  throwaway copy of the live API, and separates *held* from *could not be
+  checked*. This matters because most of the properties above degrade through
+  configuration and operations, not through code: a `chmod` from a backup
+  script, an origin added to get a demo working, a token pasted in by hand.
+  A test suite in a repository cannot see any of that.
+  *Tests: `test_selfaudit.py::test_the_self_audit_is_green_on_this_build`,
+  `::test_reopening_the_config_write_surface_turns_audit_04_red`,
+  `::test_a_loosened_key_file_turns_audit_14_red`,
+  `::test_the_report_states_what_it_did_not_check`.*
+- **A degraded signature backend is announced, not hidden.** Without
+  `cryptography` the agent signs with HMAC-SHA256 and says so in the startup
+  banner and in the statement. The self-audit runs the banner in a second
+  interpreter with `cryptography` blocked and requires the sentence to be there.
+  *Test: `test_selfaudit.py::test_the_self_audit_is_green_on_this_build`
+  (the `signing` line).*
 
 ### The console
 
@@ -75,6 +110,16 @@ to be trusted.
 - The token lives in `sessionStorage`, not `localStorage`.
 - Verification runs client-side, so a compromised operator backend cannot make
   a bad statement look good in the client's own browser.
+- **The browser's encoder and the agent's are held to the same pinned bytes.**
+  Client-side verification is worth nothing if the two implementations disagree
+  about one character: the farm would sign a statement the client could never
+  check, and neither side would know why. CI hashes a corpus of awkward values
+  in Python and in Node — running `web/canonical.js` itself — and requires
+  agreement with each other and with a pin.
+  *Tests: `test_parity.py::test_python_and_node_hash_the_corpus_identically`,
+  `::test_the_pinned_digests_have_not_moved`,
+  `::test_keys_sort_by_code_point_on_both_sides`,
+  `::test_node_refuses_the_same_things`.*
 
 ## Explicitly out of scope
 
@@ -109,9 +154,29 @@ useful than implying otherwise.
   rotation ceremony. Rotating it today means the seals before and after are
   signed by different keys, and a verifier must be given both. This should be a
   first-class operation and is not yet.
+- **A key file copied *after* activation carries the farm id with it.** Farm
+  binding stops a seal being presented as another farm's; it does not stop
+  someone duplicating a whole installation. What the client gets is a visible
+  symptom rather than a silent one: the same farm id and the same device
+  fingerprint appearing on two farms. Comparing that fingerprint out of band,
+  once, is what makes it a symptom at all.
+- **Days sealed before the activation day stay in the old format.** They must:
+  re-signing them would mean rewriting signed history, which is the one thing
+  this design exists to prevent. A ledger that predates HashGuard 2.1
+  therefore has a prefix of seals that name no farm, and the verifier says so.
 - **Price feed integrity beyond TLS.** A feed that is authentic but wrong
   produces authentic, wrong decisions. The price used is sealed into the record,
   so the error is at least *attributable* after the fact.
+- **The self-audit runs inside the process it is auditing.** It is a check
+  against regression and misconfiguration, not against a hostile build: code
+  that has been modified to lie can modify the audit too. The only defence
+  against that is comparing the running package with a digest published
+  elsewhere, which is why `--self-audit` reports that comparison as **NOT
+  CHECKED** until a release publishes one, instead of leaving it out.
+- **What the token check measures is shape, not secrecy.** Length, alphabet,
+  distinct characters and repetition are all that can be read off a string. A
+  memorable passphrase that clears all four still passes, and the report says
+  so on the line rather than implying a strength measurement nobody took.
 
 ## Known trade-offs
 

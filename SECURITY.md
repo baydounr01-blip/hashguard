@@ -19,10 +19,13 @@ credit in the advisory and in the changelog unless you would rather not have one
   surface, the outbound request guard, and anything reachable from a miner's
   socket.
 - The ledger and its verification (`ledger.py`, `merkle.py`, `canonical.py`,
-  `attest.py`, `tools/hashguard_verify.py`) — in particular any way to make a
-  tampered ledger verify, or an honest one fail.
+  `attest.py`, `rules.py`, `tools/hashguard_verify.py`) — in particular any way
+  to make a tampered ledger verify, or an honest one fail.
 - The console (`web/`) — anything that gets script execution, exfiltrates the
   token, or makes an invalid statement display as valid.
+- The self-audit (`selfaudit.py`) — in particular any way to make a probe report
+  PASS while the defence it names is not standing. A self-check that can be
+  made to lie is worse than no self-check, because someone will trust it.
 
 **Out of scope** — these are documented limits, not oversights. See
 [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md):
@@ -38,12 +41,43 @@ credit in the advisory and in the changelog unless you would rather not have one
 
 | Version | Supported |
 |---|---|
-| 2.x | yes |
+| 2.1.x | yes |
+| 2.0.x | yes — a 2.0.0 ledger is read, billed and verified unchanged by 2.1 |
 | 1.x (`index-2.html`) | **no** — see [docs/AUDIT_v1.md](docs/AUDIT_v1.md) |
 
 v1 is not patched and should not be run. Its findings are published in full
 because the software was distributed and anyone still running it should know
 precisely what they are running.
+
+## What 2.1 added to the attack surface
+
+Stated plainly, because a release that only lists its defences is not a
+security document.
+
+- **`ledger/activation.json`** — a new file, read at every start and written
+  once. It is signed by the device key and names the farm and the day
+  farm-bound seals begin. It is *not* a secret. Changing it changes nothing
+  retroactively: the rule of a sealed day is derived from the day, and an
+  activation that would move a sealed day's rule is refused, so the worst an
+  attacker with write access to it achieves is a ledger that refuses to open.
+  (Write access to that directory is already game over for other reasons.)
+- **The farm id in `device_key.json`** — 32 bytes of public material stored
+  beside the private key. It is published in `device_public.json` and in every
+  statement. It is meant to be known; comparing it once, out of band, is what
+  makes it useful.
+- **One new outbound request, and only on request.** `--self-audit
+  --release-sums URL` fetches a published digest file. It goes through the same
+  `netguard` policy a price feed gets — https only, a public address, the
+  vetted address pinned for the connection, no redirects, a byte cap — and it
+  happens only when that flag is passed. The agent's normal run makes no new
+  outbound request.
+- **A short-lived HTTP server on `127.0.0.1:0`,** started by `--self-audit` and
+  shut down when it finishes. It carries the agent's own handlers over a deep
+  copy of the configuration and its own rate limiter, so probing it cannot
+  change live settings and cannot lock anyone out of the running console.
+- **No new network-writable setting.** The console-writable surface is the same
+  bounded calibration knobs it was in 2.0.0. Nothing added here is settable
+  over the network.
 
 ## Running it safely
 
@@ -54,21 +88,40 @@ precisely what they are running.
 3. **Back up `device_key.json`, and keep it `0600`.** Lose it and past seals stay
    verifiable but no new ones can be signed by that identity. Leak it and anyone
    can mint seals in your farm's name.
-4. **List your console's exact origin** in `api.cors_origins` if you serve the
+4. **Write down the farm id the agent prints at startup, and compare it once,
+   out of band.** It is public material — 32 bytes of hex, stored beside the
+   device key — and from the activation day recorded in
+   `ledger/activation.json` it is inside every signed seal. Comparing it once
+   is what turns "a seal signed by some HashGuard installation" into "a seal
+   signed by *this* farm". The verifier checks it for you when the
+   `device_public.json` you were given carries one.
+5. **List your console's exact origin** in `api.cors_origins` if you serve the
    console from anywhere other than the agent's own machine. `*` is refused.
-5. **Keep `curtailment.mode` on `advisory`** until you have watched the decisions
+6. **Keep `curtailment.mode` on `advisory`** until you have watched the decisions
    for a while. Advisory mode never touches a relay and never bills anything.
-6. **List relay hosts explicitly** in `curtailment.webhook_allowlist`. The agent
+7. **List relay hosts explicitly** in `curtailment.webhook_allowlist`. The agent
    will not call a host nobody listed, and will not call a public address at all.
-7. **Verify your first statement by hand**, with `tools/hashguard_verify.py`. If
+8. **Verify your first statement by hand**, with `tools/hashguard_verify.py`. If
    the checking mechanism only ever gets used by the party that wrote it, it is
    decoration.
+9. **Run `python3 -m hashguard --self-audit` after installing, and after every
+   upgrade.** It replays every finding in `docs/AUDIT_v1.md` against the agent
+   running on *your* machine, in *your* configuration, and reports one verdict
+   per finding. Read the amber lines: **NOT CHECKED** means a probe could not
+   run here, and it is deliberately not counted as a pass. Use `--json` to keep
+   it in a monitor and `--strict` to make an unrunnable check fail.
+
+   The audit starts a throwaway copy of the API on `127.0.0.1:0` with its own
+   rate limiter, so nothing it does can lock you out of the console, and it
+   writes nothing: no ledger record, no seal, no config change, no relay call.
 
 ## What we commit to
 
 - Any finding that lets a bill be wrong, a network be pivoted into, or a key be
   read gets a fix and a public advisory.
-- Fixes ship with a regression test named in the advisory.
+- Fixes ship with a regression test named in the advisory, and where the fix is
+  a defence rather than a correction, with a `--self-audit` line that goes red
+  if it is ever reopened.
 - The audit of v1 stays published, in full, including the parts that are
   embarrassing. A vendor's security posture is better judged by what they
   disclose about their own past code than by what they claim about their current

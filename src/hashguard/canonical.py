@@ -9,10 +9,20 @@ carried as an integer in a declared minor unit (see :mod:`hashguard.money`).
 
 What remains is a total, deterministic encoding:
 
-* objects with keys sorted by their UTF-8 code points,
+* objects with keys sorted by their Unicode code points,
 * no insignificant whitespace,
 * UTF-8 output,
-* ``int``, ``str``, ``bool``, ``None``, ``list`` and ``dict`` only.
+* ``int``, ``str``, ``bool``, ``None``, ``list`` and ``dict`` only,
+* and no integer outside ``±(2**53 - 1)``.
+
+That last rule is about the *other* implementation. The console re-derives the
+invoice in the client's own browser, and JavaScript parses ``9007199254740993``
+as ``9007199254740992``: a record holding such a value would hash differently
+there, and the client could never verify it. Refusing the value here makes
+agreement a property of the format rather than a hope about the data. The bound
+is four orders of magnitude above any real quantity -- 2**53 watt-hours is
+9 PWh, 2**53 micro-euro is nine billion euro -- so nothing HashGuard measures
+can reach it, and a value that does is a bug worth failing on.
 
 The hash primitive is SHA-256d (SHA-256 applied twice), the same construction
 Bitcoin uses and the one carried over from the ``bbu.merkle`` module of the
@@ -30,6 +40,10 @@ from typing import Any
 #: for one purpose can never be replayed as a hash for another.
 SPEC = "hashguard-ledger/2"
 
+#: The largest integer JavaScript and Python still agree about. See the module
+#: docstring: this is a compatibility bound, not a range limit on the physics.
+MAX_SAFE_INT = 2**53 - 1
+
 
 class CanonicalError(ValueError):
     """The value cannot be canonically encoded, so it must not be hashed."""
@@ -41,6 +55,13 @@ def _check(value: Any, path: str = "$") -> None:
     if isinstance(value, bool):
         return
     if isinstance(value, int):
+        if value > MAX_SAFE_INT or value < -MAX_SAFE_INT:
+            raise CanonicalError(
+                f"{path}: {value} is outside ±(2**53 - 1), where JavaScript stops being "
+                "able to tell one integer from the next. The console verifies this record "
+                "in the client's browser, so a number it cannot read is a number this "
+                "ledger will not store"
+            )
         return
     if isinstance(value, float):
         raise CanonicalError(

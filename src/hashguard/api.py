@@ -65,6 +65,9 @@ class AgentState:
         self.history: list[dict] = []
         self.baseline_gh: int | None = None
         self.observed_gh: int | None = None
+        #: The interval currently running, whose decision is already committed
+        #: on disk. ``None`` before the first poll of a session.
+        self.open_interval: dict | None = None
         self.notes: list[str] = []
         self.lock = threading.RLock()
         limits = config["api"]["rate_limit"]
@@ -293,6 +296,14 @@ def make_handler(state: AgentState):
                 "telemetry": {
                     "baseline_gh": state.baseline_gh,
                     "observed_gh": state.observed_gh,
+                },
+                # The decision now running was committed before this poll's
+                # telemetry existed. The console shows the commitment so an
+                # operator can watch the order being kept, not just read it.
+                "commitment": {
+                    "open": state.open_interval is not None,
+                    "commit": (state.open_interval or {}).get("commit"),
+                    "opened": (state.open_interval or {}).get("opened"),
                 },
                 "notes": state.notes[-10:],
                 "device": state.identity.public(),

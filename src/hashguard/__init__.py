@@ -12,5 +12,5 @@ matters to a sceptical reader is ``tools/hashguard_verify.py``, which checks a
 statement without importing any of this.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __all__ = ["__version__"]
